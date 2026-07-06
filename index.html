@@ -22,6 +22,9 @@
     margin:0; background:var(--bg); color:var(--text);
     font-family:var(--sans); padding:20px 16px 60px;
   }
+  .page{max-width:1400px; margin:0 auto;}
+  .estimated{color:var(--amber) !important; opacity:.9;}
+  .estimated::after{content:" ≈"; font-size:10px;}
   h1{
     font-family:var(--mono); font-size:16px; font-weight:600;
     letter-spacing:.08em; text-transform:uppercase; color:var(--amber);
@@ -56,6 +59,22 @@
   .down{color:var(--down);}
   .dim{color:var(--dim);}
   .sub{font-size:11px; color:var(--dim); margin-top:8px; line-height:1.5;}
+  .ticker-list{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+    gap:8px 14px;
+  }
+  .ticker-list .row{
+    display:grid;
+    grid-template-columns:1fr auto auto;
+    align-items:center;
+    gap:10px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:8px 10px;
+    background:#0d1319;
+  }
+  .ticker-list .row .val{text-align:right;}
   .ticker-list .row a.sym{color:var(--text); text-decoration:none; font-family:var(--mono);}
   .ticker-list .row a.sym:hover{color:var(--amber);}
   .section-title{grid-column:1/-1; font-family:var(--mono); color:var(--amber); font-size:12px; letter-spacing:.08em; text-transform:uppercase; margin:26px 0 4px; border-bottom:1px solid var(--line); padding-bottom:6px;}
@@ -65,6 +84,7 @@
 </style>
 </head>
 <body>
+<div class="page">
 
 <div class="topbar">
   <div>
@@ -104,7 +124,7 @@
     <div class="row"><span class="label">BTC / Share (Basic)</span><span class="val" id="mstr_btcps_basic">--</span></div>
     <div class="row"><span class="label">BTC / Share (Diluted)</span><span class="val" id="mstr_btcps_diluted">--</span></div>
 
-    <div class="sub">以上BTC持仓/市值/mNAV等字段抓取自 bitcointreasuries.net,不是我自己算的,更新频率见后端配置(默认20分钟);现价单独走雅虎财经,60秒左右刷新。</div>
+    <div class="sub">以上BTC持仓/市值/mNAV等字段抓取自 bitcointreasuries.net,不是我自己算的,更新频率见后端配置(默认20分钟);现价单独走雅虎财经,60秒左右刷新。<br>标黄并带"≈"的数字是网站原文抓不到时,用已抓到的其他字段换算出来的近似值,不是网站原始数字,鼠标悬停能看到说明。</div>
 
     <h2 style="margin-top:16px;">优先股(现价 + 链接)</h2>
     <div class="ticker-list" id="mstr_preferreds"></div>
@@ -141,6 +161,8 @@
 </div>
 
 <div class="errbox" id="errbox"></div>
+
+</div><!-- /.page -->
 
 <script>
 const REFRESH_SEC = 60;
@@ -185,6 +207,13 @@ function renderTickerRow(container, name, sym, price, chgPct, linkBase){
   container.appendChild(div);
 }
 
+function setFieldValue(prefix, field, text, isEstimated){
+  const el = document.getElementById(`${prefix}_${field}`);
+  el.textContent = text;
+  el.classList.toggle('estimated', !!isEstimated);
+  el.title = isEstimated ? '此数字不是bitcointreasuries.net页面上直接抓到的原始文本,是用已抓到的其他字段(如Market Cap/Enterprise Value/BTC Value)换算出来的近似值' : '';
+}
+
 function renderTreasuryGroup(prefix, quote, treasury){
   document.getElementById(`${prefix}_price`).textContent = (quote && quote.price!=null) ? '$'+fmtNum(quote.price) : '--';
   const chgEl = document.getElementById(`${prefix}_chg`);
@@ -193,18 +222,20 @@ function renderTreasuryGroup(prefix, quote, treasury){
   chgEl.className = 'val ' + pctClass(chg);
 
   const t = treasury || {};
+  const est = new Set(t.estimated_fields || []);
   document.getElementById(`${prefix}_asof`).textContent = t.as_of ? ('数据截至: ' + t.as_of) : '';
-  document.getElementById(`${prefix}_btc_holdings`).textContent = t.btc_holdings!=null ? '₿'+fmtNum(t.btc_holdings,0) : '--';
-  document.getElementById(`${prefix}_btc_value`).textContent = fmtMoney(t.btc_value);
-  document.getElementById(`${prefix}_cost_basis`).textContent = fmtMoney(t.total_cost_basis);
-  document.getElementById(`${prefix}_avg_cost`).textContent = t.avg_cost_per_btc!=null ? '$'+fmtNum(t.avg_cost_per_btc,0) : '--';
-  document.getElementById(`${prefix}_mcap`).textContent = fmtMoney(t.market_cap);
-  document.getElementById(`${prefix}_ev`).textContent = fmtMoney(t.enterprise_value);
-  document.getElementById(`${prefix}_mnav_ev`).textContent = t.mnav_ev!=null ? fmtNum(t.mnav_ev,2)+'x' : '--';
-  document.getElementById(`${prefix}_mnav_basic`).textContent = t.mnav_basic!=null ? fmtNum(t.mnav_basic,2)+'x' : '--';
-  document.getElementById(`${prefix}_mnav_diluted`).textContent = t.mnav_diluted!=null ? fmtNum(t.mnav_diluted,2)+'x' : '--';
-  document.getElementById(`${prefix}_btcps_basic`).textContent = t.btc_per_share_basic!=null ? fmtNum(t.btc_per_share_basic,6) : '--';
-  document.getElementById(`${prefix}_btcps_diluted`).textContent = t.btc_per_share_diluted!=null ? fmtNum(t.btc_per_share_diluted,6) : '--';
+
+  setFieldValue(prefix, 'btc_holdings', t.btc_holdings!=null ? '₿'+fmtNum(t.btc_holdings,0) : '--', est.has('btc_holdings'));
+  setFieldValue(prefix, 'btc_value', fmtMoney(t.btc_value), false);
+  setFieldValue(prefix, 'cost_basis', fmtMoney(t.total_cost_basis), false);
+  setFieldValue(prefix, 'avg_cost', t.avg_cost_per_btc!=null ? '$'+fmtNum(t.avg_cost_per_btc,0) : '--', false);
+  setFieldValue(prefix, 'mcap', fmtMoney(t.market_cap), false);
+  setFieldValue(prefix, 'ev', fmtMoney(t.enterprise_value), false);
+  setFieldValue(prefix, 'mnav_ev', t.mnav_ev!=null ? fmtNum(t.mnav_ev,2)+'x' : '--', est.has('mnav_ev'));
+  setFieldValue(prefix, 'mnav_basic', t.mnav_basic!=null ? fmtNum(t.mnav_basic,2)+'x' : '--', est.has('mnav_basic'));
+  setFieldValue(prefix, 'mnav_diluted', t.mnav_diluted!=null ? fmtNum(t.mnav_diluted,2)+'x' : '--', est.has('mnav_diluted'));
+  setFieldValue(prefix, 'btcps_basic', t.btc_per_share_basic!=null ? fmtNum(t.btc_per_share_basic,6) : '--', false);
+  setFieldValue(prefix, 'btcps_diluted', t.btc_per_share_diluted!=null ? fmtNum(t.btc_per_share_diluted,6) : '--', false);
 }
 
 async function refresh(){

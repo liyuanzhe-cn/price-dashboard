@@ -273,41 +273,55 @@ def _parse_multiple(raw):
     return float(m.group(1))
 
 
-def _find_after_label(text, label, pattern, flags=0):
-    """在纯文本里找 label 之后第一处匹配 pattern 的内容(容忍中间有换行/空白)"""
-    m = re.search(re.escape(label) + r'\s*\n*\s*' + pattern, text, flags)
-    return m.group(1) if m else None
+def _find_value_near_label(lines, label, value_regex, window=8):
+    """在按行拆分的文本里找包含 label 的行,然后在该行及其后window行内
+    找第一处匹配 value_regex 的内容。比"必须紧跟在label后面"更宽松,
+    能容忍标签和数值之间夹着图标文字/提示语/涨跌幅小标签等内容。
+    如果 label 在文本里出现多次,第一次出现附近找不到值不会直接放弃,
+    会继续尝试下一次出现。"""
+    n = len(lines)
+    for i, line in enumerate(lines):
+        if label in line:
+            for j in range(i, min(i + 1 + window, n)):
+                m = re.search(value_regex, lines[j])
+                if m:
+                    return m.group(1)
+    return None
 
 
 def fetch_treasury_page(url):
     """抓取 bitcointreasuries.net 的公司页面,解析出BTC持仓/市值/mNAV等已算好的字段。
-    解析不到的字段一律返回None,不用假数据填充。"""
+    解析不到的字段一律返回None,不用假数据填充。
+    如果 mNAV(EV)/mNAV(Basic)/mNAV(Diluted)/BTC Holdings 直接解析失败,但 Market Cap /
+    Enterprise Value / BTC Value 抓到了,会用这几个已抓到的数字反推出来,并在
+    estimated_fields 里标记是"推算值"而不是网站原始数字,前端需要区分展示。"""
     out = {
         "btc_holdings": None, "btc_value": None, "total_cost_basis": None, "avg_cost_per_btc": None,
         "market_cap": None, "enterprise_value": None,
         "mnav_ev": None, "mnav_basic": None, "mnav_diluted": None,
         "btc_per_share_basic": None, "btc_per_share_diluted": None,
         "as_of": None,
+        "estimated_fields": [],
     }
     r = requests.get(url, headers=HEADERS, timeout=15)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
     text = soup.get_text(separator="\n")
-    text = re.sub(r'\n{2,}', '\n', text)  # 压缩多余空行,方便正则匹配
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
 
     raw = {}
-    raw["btc_holdings"] = _find_after_label(text, "BTC Holdings", r'(₿[\d,\.]+)')
-    raw["as_of"] = _find_after_label(text, "As of", r'([^\n]+)')
-    raw["btc_value"] = _find_after_label(text, "BTC Value", r'(\$[\d,\.]+\s*[BMK]?)')
-    raw["total_cost_basis"] = _find_after_label(text, "Total Cost Basis", r'(\$[\d,\.]+\s*[BMK]?)')
-    raw["avg_cost_per_btc"] = _find_after_label(text, "Avg Cost / BTC", r'(\$[\d,\.]+\s*[BMK]?)')
-    raw["market_cap"] = _find_after_label(text, "Market Cap", r'(\$[\d,\.]+\s*[BMK]?)')
-    raw["enterprise_value"] = _find_after_label(text, "Enterprise Value", r'(\$[\d,\.]+\s*[BMK]?)')
-    raw["mnav_ev"] = _find_after_label(text, "mNAV (EV)", r'([\d\.]+×)')
-    raw["mnav_basic"] = _find_after_label(text, "mNAV (Basic)", r'([\d\.]+×)')
-    raw["mnav_diluted"] = _find_after_label(text, "mNAV (Diluted)", r'([\d\.]+×)')
-    raw["btc_per_share_basic"] = _find_after_label(text, "BTC / Share (Basic)", r'([\d\.]+)')
-    raw["btc_per_share_diluted"] = _find_after_label(text, "BTC / Share (Diluted)", r'([\d\.]+)')
+    raw["btc_holdings"] = _find_value_near_label(lines, "BTC Holdings", r'(₿[\d,\.]+)')
+    raw["as_of"] = _find_value_near_label(lines, "As of", r'As of\s*(.+)')
+    raw["btc_value"] = _find_value_near_label(lines, "BTC Value", r'(\$[\d,\.]+\s*[BMK]?)')
+    raw["total_cost_basis"] = _find_value_near_label(lines, "Total Cost Basis", r'(\$[\d,\.]+\s*[BMK]?)')
+    raw["avg_cost_per_btc"] = _find_value_near_label(lines, "Avg Cost / BTC", r'(\$[\d,\.]+\s*[BMK]?)')
+    raw["market_cap"] = _find_value_near_label(lines, "Market Cap", r'(\$[\d,\.]+\s*[BMK]?)')
+    raw["enterprise_value"] = _find_value_near_label(lines, "Enterprise Value", r'(\$[\d,\.]+\s*[BMK]?)')
+    raw["mnav_ev"] = _find_value_near_label(lines, "mNAV (EV)", r'([\d\.]+)\s*[×xX]')
+    raw["mnav_basic"] = _find_value_near_label(lines, "mNAV (Basic)", r'([\d\.]+)\s*[×xX]')
+    raw["mnav_diluted"] = _find_value_near_label(lines, "mNAV (Diluted)", r'([\d\.]+)\s*[×xX]')
+    raw["btc_per_share_basic"] = _find_value_near_label(lines, "BTC / Share (Basic)", r'([\d\.]+)')
+    raw["btc_per_share_diluted"] = _find_value_near_label(lines, "BTC / Share (Diluted)", r'([\d\.]+)')
 
     out["btc_holdings"] = _parse_btc(raw["btc_holdings"])
     out["as_of"] = raw["as_of"]
@@ -321,6 +335,29 @@ def fetch_treasury_page(url):
     out["mnav_diluted"] = _parse_multiple(raw["mnav_diluted"])
     out["btc_per_share_basic"] = _parse_multiple(raw["btc_per_share_basic"])
     out["btc_per_share_diluted"] = _parse_multiple(raw["btc_per_share_diluted"])
+
+    # ---- 兜底推算:直接解析失败,但其他字段够用时,用已抓到的数字反推 ----
+    if out["btc_holdings"] is None and out["btc_value"] is not None:
+        with STATE_LOCK:
+            live_btc_price = STATE.get("btc", {}).get("price_usd")
+        if live_btc_price:
+            out["btc_holdings"] = out["btc_value"] / live_btc_price
+            out["estimated_fields"].append("btc_holdings")
+
+    if out["mnav_ev"] is None and out["enterprise_value"] is not None and out["btc_value"]:
+        out["mnav_ev"] = out["enterprise_value"] / out["btc_value"]
+        out["estimated_fields"].append("mnav_ev")
+
+    if out["mnav_basic"] is None and out["market_cap"] is not None and out["btc_value"]:
+        out["mnav_basic"] = out["market_cap"] / out["btc_value"]
+        out["estimated_fields"].append("mnav_basic")
+
+    if (out["mnav_diluted"] is None and out["mnav_basic"] is not None
+            and out["btc_per_share_basic"] and out["btc_per_share_diluted"]):
+        ratio = out["btc_per_share_basic"] / out["btc_per_share_diluted"]
+        out["mnav_diluted"] = out["mnav_basic"] * ratio
+        out["estimated_fields"].append("mnav_diluted")
+
     return out
 
 
