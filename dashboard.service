@@ -1,0 +1,19 @@
+[Unit]
+Description=Personal Market Dashboard Backend
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/dashboard
+ExecStart=/root/dashboard/venv/bin/python3 /root/dashboard/server.py
+Restart=on-failure
+RestartSec=5
+
+# 你的VPS总内存约969MB,已有Xray/3X-UI占用近一半。这里限制这个进程最多用200MB,
+# 真出问题(比如内存泄漏)systemd会杀掉重启,不会拖垮整机上的VPN服务。
+# 如果后面用 free -h 或 systemctl status 观察到实际占用远低于200MB,可以把这个数字调低。
+MemoryMax=200M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
