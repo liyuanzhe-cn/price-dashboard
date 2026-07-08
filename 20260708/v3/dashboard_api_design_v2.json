@@ -1,0 +1,91 @@
+{
+  "endpoint": "/api/data",
+  "说明": "server.py内存里的STATE字典,原样转成JSON返回给前端,每60秒左右前端会轮询一次这个接口",
+  "fields": {
+    "updated_at": "后端最近一次完整循环的时间戳(不代表所有字段都在这一刻刷新,各类字段各自频率不同)",
+    "btc": {
+      "price_usd": "实时价格,来源CoinGecko批量接口,约30秒刷新",
+      "change_24h_pct": "24小时涨跌幅,同上",
+      "ath": "历史最高价(USD),来源CoinGecko自带字段,精确到天",
+      "ath_change_pct": "距历史最高价的百分比(负数),来源CoinGecko自带字段,不是我们自己算的",
+      "ath_date": "历史最高价出现的日期,来源CoinGecko自带字段,精确到天"
+    },
+    "onchain": "mvrv / mvrv_zscore / realized_price / balanced_price,来自BGeometrics,按天更新,8小时刷新一次",
+    "mstr": {
+      "quote": "现价+涨跌幅,来源雅虎财经",
+      "treasury": "BTC持仓/市值/mNAV等,抓取自bitcointreasuries.net,20分钟刷新一次,部分字段可能是estimated推算值",
+      "距历史高点(前端计算)": "前端用 data.ath['MSTR'] 里的 high 字段和 quote.price 现算,v5修复说明:历史最高价现在用yfinance月线的'最高价'(High)取最大值,不再用'收盘价'(Close)——之前用Close会把月内冲高后回落收盘的情况'抹平',导致算出来的ATH偏低(黄金/白银反馈的偏差就是这个原因)。同时只能精确到'哪个月',不能精确到具体哪一天,因为下载的是月线不是日线。"
+    },
+    "asst": "结构和mstr完全一样,标的换成ASST(Strive)",
+    "mstr_preferreds": "STRC/STRD/STRF/STRK 各自的现价+涨跌幅,来源雅虎财经",
+    "watchlist": {
+      "说明": "自选股,这次扩充后的清单如下,key是前端展示名(能配中文的配了中文),value是雅虎财经ticker(21Shares因为没有对应的公开标的,ticker是null)",
+      "清单": {
+        "伯克希尔B(BRKB)": "BRK-B",
+        "特斯拉(TSLA)": "TSLA",
+        "谷歌(GOOG)": "GOOG",
+        "Circle(CRCL)": "CRCL",
+        "Coinbase(COIN)": "COIN",
+        "Robinhood(HOOD)": "HOOD",
+        "英伟达(NVDA)": "NVDA",
+        "Arm(ARM)": "ARM",
+        "AMD": "AMD",
+        "SpaceX(SPCX)": "SPCX(2026年6月12日已IPO,不再是未上市状态)",
+        "苹果(AAPL)": "AAPL",
+        "微软(MSFT)": "MSFT",
+        "Meta(META)": "META",
+        "奈飞(NFLX)": "NFLX",
+        "亚马逊(AMZN)": "AMZN",
+        "埃克森美孚(XOM)": "XOM",
+        "SK海力士(000660.KS)": "000660.KS",
+        "三星电子(005930.KS)": "005930.KS",
+        "LG电子(066570.KS)": "066570.KS(注意:LG集团控股公司是另一个代码003550.KS,有歧义,需你确认)",
+        "Adobe(ADBE)": "ADBE",
+        "Metaplanet(3350.T)": "3350.T",
+        "21Shares(待确认具体标的)": null,
+        "策略(MSTR)": "复用mstr.quote,不重复请求",
+        "Strive(ASST)": "复用asst.quote,不重复请求",
+        "Stretch优先股(STRC)": "复用mstr_preferreds.STRC,不重复请求"
+      },
+      "排序": "前端按'距历史高点跌幅'从大到小排序(跌得最狠的排最前面),这是默认选择,不是唯一合理排法"
+    },
+    "indices": "指数清单,结构同watchlist,现价+涨跌幅",
+    "metals": "贵金属期货/ETF,结构同watchlist",
+    "gold_retail": {
+      "price_rmb_per_gram": "周大福官网零售金价,人民币/克,不套用ATH概念(不是交易所行情)"
+    },
+    "crypto_extra": {
+      "说明": "ETH/ADA/AVAX/SOL/HYPE/BNB/BGB/OKB/XAUT,每个都有:",
+      "price": "现价",
+      "change_pct": "24h涨跌幅",
+      "ath": "历史最高价,来源CoinGecko",
+      "ath_change_pct": "距历史高点百分比,来源CoinGecko",
+      "ath_date": "历史最高点日期,来源CoinGecko,精确到天"
+    },
+    "risk_indicators": {
+      "buffett_indicator": "巴菲特指标(%),尝试抓取currentmarketvaluation.com,12小时刷新",
+      "shiller_pe": "席勒市盈率,尝试抓取multpl.com,12小时刷新",
+      "说明": "修正版巴菲特指标和Tobin's Q没有自动抓取,只在links里给了链接"
+    },
+    "ath": {
+      "说明": "v5修复说明:历史最高价现在用yfinance月线的'最高价'(High)取最大值,不再用'收盘价'(Close)——之前用Close会把月内冲高后回落收盘的情况'抹平',导致算出来的ATH偏低(黄金/白银反馈的偏差就是这个原因)。同时只能精确到'哪个月',不能精确到具体哪一天,因为下载的是月线不是日线。 覆盖watchlist全部ticker + indices全部ticker + metals全部ticker + MSTR + ASST。",
+      "每个ticker对应的值结构": {
+        "high": "历史最高价(月线High取最大值)",
+        "date": "对应月份,格式YYYY-MM"
+      },
+      "刷新频率": "24小时一次(ATH_REFRESH_SEC),可以用ENABLE_ATH_DRAWDOWN=False整个关掉"
+    },
+    "links": "各种超链接模板,前端用{sym}/{id}占位符替换后跳转",
+    "errors": "后端最近10条抓取失败记录,前端在页面底部原样展示"
+  },
+  "cache_log.json": {
+    "说明": "和server.py同目录的持久化缓存,不是/api/data的一部分,是server.py自己读写的文件",
+    "结构": {
+      "saved_at": "这份缓存文件最后一次被写入的时间戳",
+      "last_fetch": "各类别(crypto/stock/onchain/treasury/gold_retail/risk_indicator/ath)上次真正抓取成功的时间戳",
+      "data": "对应STATE里各字段在那个时间点的快照"
+    },
+    "作用": "进程重启时,把_last_fetch设成缓存里记录的真实时间点(不是0,也不是当前时刻),这样重启不会导致所有数据(尤其是有频率限制的那几类)立刻被重新请求一遍;同时重启后的几秒到几分钟里,页面显示的是缓存里的真实数据,不是一片空白。",
+    "这次附带的cache_log.json内容": "特意给了一份空文件({}),不是你现在线上那份——因为ATH算法从Close改成了High,旧缓存里的ATH数值是用错误算法算出来的,留着旧缓存会导致新代码在ATH_REFRESH_SEC(24小时)之前一直沿用错误的旧数值。换成这份空文件能让服务重启后立刻用新算法重新算一遍。"
+  }
+}
