@@ -1,0 +1,556 @@
+{
+  "main": {
+    "Bitcoin": {
+      "BTC": {
+        "资产名": "BTC",
+        "资产中文名": "比特币",
+        "价格": "price_usd(实时,来源CoinGecko,约30秒刷新)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_24h_pct",
+          "MVRV": "mvrv(链上指标,按天更新,非分钟级)",
+          "MVRV-Z": "mvrv_zscore(链上指标,按天更新)",
+          "Realized Price": "realized_price(链上指标,按天更新)",
+          "Balanced Price": "balanced_price(数据源未100%核实,长期显示--属预期内)",
+          "最高点下跌幅度": "同其他加密货币,直接用CoinGecko的ath/ath_change_percentage字段(coingecko_id=bitcoin)"
+        },
+        "获取信息的url": {
+          "价格数据源": "https://api.coingecko.com/api/v3/simple/price",
+          "MVRV/MVRV-Z图表": "https://charts.bgeometrics.com/mvrv.html",
+          "Realized Price图表": "https://charts.bgeometrics.com/realized-price.html",
+          "Balanced Price参考(未确认稳定图表页)": "https://bitcoin-data.com/",
+          "链上指标API(需免费token)": "https://api.bgeometrics.com/v1/{mvrv|mvrv-zscore|realized-price|balanced-price}",
+          "ATH数据": "https://api.coingecko.com/api/v3/coins/bitcoin"
+        }
+      }
+    },
+    "MSTR系(Strategy普通股+优先股)": {
+      "MSTR": {
+        "资产名": "MSTR",
+        "资产中文名": "策略公司(Strategy,原MicroStrategy)",
+        "价格": "现价(实时,来源雅虎财经yfinance,约60秒刷新)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "BTC Holdings": "btc_holdings(抓取自bitcointreasuries.net;若抓取失败会用BTC Value÷实时BTC价格反推,标记为estimated)",
+          "BTC Value": "btc_value(抓取自bitcointreasuries.net)",
+          "Total Cost Basis": "total_cost_basis(抓取自bitcointreasuries.net)",
+          "Avg Cost / BTC": "avg_cost_per_btc(抓取自bitcointreasuries.net)",
+          "Market Cap": "market_cap(抓取自bitcointreasuries.net)",
+          "Enterprise Value": "enterprise_value(抓取自bitcointreasuries.net)",
+          "mNAV (EV)": "mnav_ev(优先抓网站原文,失败则用Enterprise Value÷BTC Value反推,标记estimated)",
+          "mNAV (Basic)": "mnav_basic(优先抓网站原文,失败则用Market Cap÷BTC Value反推,标记estimated)",
+          "mNAV (Diluted)": "mnav_diluted(优先抓网站原文,失败则用mNAV Basic×(BTC/Share Basic÷BTC/Share Diluted)反推,标记estimated)",
+          "BTC / Share (Basic)": "btc_per_share_basic(抓取自bitcointreasuries.net)",
+          "BTC / Share (Diluted)": "btc_per_share_diluted(抓取自bitcointreasuries.net)",
+          "数据截至日期": "as_of",
+          "抓取频率": "默认20分钟一次(TREASURY_REFRESH_SEC)",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": {
+          "股价数据源": "雅虎财经(通过yfinance库)",
+          "BTC持仓与mNAV数据源": "https://bitcointreasuries.net/public-companies/strategy"
+        }
+      },
+      "STRC": {
+        "资产名": "STRC",
+        "资产中文名": "Strategy优先股-Stretch(变动利率优先股,目标价约$100,月付股息)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价",
+          "说明": "只做现价+涨跌幅+链接展示,不解析票面利率等条款信息"
+        },
+        "获取信息的url": "https://bitcointreasuries.net/digital-credit/STRC"
+      },
+      "STRD": {
+        "资产名": "STRD",
+        "资产中文名": "Strategy优先股-Stride(10%固定股息,非累积,季付,优先级最低的优先股)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://bitcointreasuries.net/digital-credit/STRD"
+      },
+      "STRF": {
+        "资产名": "STRF",
+        "资产中文名": "Strategy优先股-Strife(10%固定股息,累积,季付,优先级较高)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://bitcointreasuries.net/digital-credit/STRF"
+      },
+      "STRK": {
+        "资产名": "STRK",
+        "资产中文名": "Strategy优先股-Strike(8%累积股息,可按10:1转换为MSTR普通股)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://bitcointreasuries.net/digital-credit/STRK"
+      }
+    },
+    "ASST系(Strive普通股)": {
+      "ASST": {
+        "资产名": "ASST",
+        "资产中文名": "Strive Inc.(比特币资产管理公司)普通股",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "BTC Holdings": "btc_holdings(同MSTR,抓取自bitcointreasuries.net,失败则反推并标记estimated)",
+          "BTC Value": "btc_value",
+          "Total Cost Basis": "total_cost_basis",
+          "Avg Cost / BTC": "avg_cost_per_btc",
+          "Market Cap": "market_cap",
+          "Enterprise Value": "enterprise_value",
+          "mNAV (EV)": "mnav_ev(同MSTR逻辑,可能为反推的estimated值)",
+          "mNAV (Basic)": "mnav_basic(同MSTR逻辑,可能为反推的estimated值)",
+          "mNAV (Diluted)": "mnav_diluted(同MSTR逻辑,可能为反推的estimated值)",
+          "BTC / Share (Basic)": "btc_per_share_basic",
+          "BTC / Share (Diluted)": "btc_per_share_diluted",
+          "数据截至日期": "as_of",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": {
+          "股价数据源": "雅虎财经(通过yfinance库)",
+          "BTC持仓与mNAV数据源": "https://bitcointreasuries.net/public-companies/strive"
+        }
+      }
+    },
+    "自选股": {
+      "BRKB": {
+        "资产名": "BRK-B",
+        "资产中文名": "伯克希尔·哈撒韦B股",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/BRK-B/"
+      },
+      "TSLA": {
+        "资产名": "TSLA",
+        "资产中文名": "特斯拉",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/TSLA/"
+      },
+      "GOOG": {
+        "资产名": "GOOG",
+        "资产中文名": "谷歌(Alphabet)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/GOOG/"
+      },
+      "CRCL": {
+        "资产名": "CRCL",
+        "资产中文名": "Circle Internet Group(USDC发行方)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/CRCL/"
+      },
+      "COIN": {
+        "资产名": "COIN",
+        "资产中文名": "Coinbase",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/COIN/"
+      },
+      "HOOD": {
+        "资产名": "HOOD",
+        "资产中文名": "Robinhood",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/HOOD/"
+      },
+      "NVDA": {
+        "资产名": "NVDA",
+        "资产中文名": "英伟达",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/NVDA/"
+      },
+      "ARM": {
+        "资产名": "ARM",
+        "资产中文名": "Arm Holdings",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/ARM/"
+      },
+      "AMD": {
+        "资产名": "AMD",
+        "资产中文名": "超微半导体(AMD)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/AMD/"
+      },
+      "SPCX": {
+        "资产名": "SPCX",
+        "资产中文名": "SpaceX",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价",
+          "备注": "据我所知SpaceX目前并未公开上市,ticker是否存在、是否对应实际可交易标的需要你自行核实,大概率抓不到实时行情"
+        },
+        "获取信息的url": "https://stockanalysis.com/stocks/SPCX/"
+      }
+    },
+    "贵金属": {
+      "黄金": {
+        "资产名": "GC=F",
+        "资产中文名": "黄金(COMEX期货,现货代理)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价",
+          "备注": "也可用现货代码XAUUSD=X(雅虎财经)作为替代"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/GC%3DF:COMEX"
+      },
+      "黄金稳定币": {
+        "资产名": "XAUT",
+        "资产中文名": "泰达黄金稳定币(1枚≈1金衡盎司黄金)",
+        "价格": "现价(实时,来源CoinGecko)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_24h_pct",
+          "最高点下跌幅度": "最高点/最高点下跌幅度直接用CoinGecko该币种详情接口里的ath与ath_change_percentage字段,不需要自己算",
+          "备注": "你原稿写的ticker是'XUAT',正确代码应为'XAUT',已帮你更正"
+        },
+        "获取信息的url": "https://api.coingecko.com/api/v3/coins/tether-gold"
+      },
+      "周大福首饰黄金": {
+        "资产名": "CTF_GOLD_RETAIL",
+        "资产中文名": "周大福足金零售价(不含工费)",
+        "价格": "人民币/克,来源周大福官方每日金价页面",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct(需自行按前一日报价计算,官网本身未必直接提供百分比)",
+          "最高点下跌幅度": "官方页面未提供历史最高价接口,需自己长期记录每日报价才能计算,目前无法自动获取"
+        },
+        "获取信息的url": "https://www.chowtaifook.com/zh-hk/eshop/realtime-gold-price.html"
+      },
+      "白银": {
+        "资产名": "SI=F",
+        "资产中文名": "白银(COMEX期货,现货代理)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价",
+          "备注": "也可用现货代码XAGUSD=X(雅虎财经)作为替代"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/SI%3DCMX"
+      },
+      "铂金": {
+        "资产名": "PL=F",
+        "资产中文名": "铂金(NYMEX期货,现货代理)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价",
+          "备注": "也可用现货代码XPTUSD=X(雅虎财经)作为替代"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/PL%3DNYM"
+      },
+      "钯金": {
+        "资产名": "PA=F",
+        "资产中文名": "钯金(NYMEX期货,现货代理)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价",
+          "备注": "也可用现货代码XPDUSD=X(雅虎财经)作为替代"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/PA%3DNYM"
+      },
+      "铜": {
+        "资产名": "HG=F",
+        "资产中文名": "铜(COMEX期货)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/HG%3DCMX"
+      },
+      "锂": {
+        "资产名": "LIT / LC(广期所)",
+        "资产中文名": "锂(无统一全球现货代码,给两个可选来源)",
+        "价格": "现价(需二选一)",
+        "资产其他属性": {
+          "选项1": "LIT(Global X Lithium & Battery Tech ETF,雅虎财经代码LIT,是股票化的锂产业链代理,不是纯锂现货价)",
+          "选项2": "广州期货交易所碳酸锂期货(合约代码前缀LC,按月份滚动,如LC2501,需要你指定具体月份合约)",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价(如果用LIT ETF);广期所期货合约本身存续时间短,历史最高价意义有限"
+        },
+        "获取信息的url": {
+          "LIT ETF": "https://stockanalysis.com/etf/LIT/",
+          "广期所碳酸锂期货": "http://www.gfex.com.cn/"
+        }
+      }
+    },
+    "指数": {
+      "NASDAQ Composite": {
+        "资产名": "^IXIC",
+        "资产中文名": "纳斯达克综合指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5EIXIC"
+      },
+      "NASDAQ 100": {
+        "资产名": "^NDX",
+        "资产中文名": "纳斯达克100指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5ENDX"
+      },
+      "S&P 500": {
+        "资产名": "^GSPC",
+        "资产中文名": "标普500指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5EGSPC"
+      },
+      "PHLX Semiconductor Sector": {
+        "资产名": "^SOX",
+        "资产中文名": "费城半导体指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5ESOX"
+      },
+      "Russell 2000 Index": {
+        "资产名": "^RUT",
+        "资产中文名": "罗素2000小盘股指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5ERUT"
+      },
+      "Dow Jones Industrial Average": {
+        "资产名": "^DJI",
+        "资产中文名": "道琼斯工业平均指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5EDJI"
+      },
+      "NYSE Composite": {
+        "资产名": "^NYA",
+        "资产中文名": "纽约证券交易所综合指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5ENYA"
+      },
+      "KOSPI": {
+        "资产名": "^KS11",
+        "资产中文名": "韩国综合股价指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5EKS11"
+      },
+      "NIFTY 50": {
+        "资产名": "^NSEI",
+        "资产中文名": "印度Nifty50指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5ENSEI"
+      },
+      "SENSEX": {
+        "资产名": "^BSESN",
+        "资产中文名": "印度孟买SENSEX指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/%5EBSESN"
+      },
+      "上证指数": {
+        "资产名": "000001.SS",
+        "资产中文名": "上证指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/000001:SHA"
+      },
+      "沪深300": {
+        "资产名": "000300.SS",
+        "资产中文名": "沪深300指数",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/000300:SHA"
+      },
+      "台湾50(0050)": {
+        "资产名": "0050.TW",
+        "资产中文名": "元大台湾50 ETF(追踪台湾市值前50大公司,非官方指数本身)",
+        "价格": "现价(实时,来源雅虎财经)",
+        "资产其他属性": {
+          "24h涨跌幅": "change_pct",
+          "最高点下跌幅度": "最高点下跌幅度页面没有现成接口,需要用yfinance拉取period='max'的历史收盘价,自己算(当前价-历史最高收盘价)/历史最高收盘价",
+          "备注": "如果你指的是台湾加权指数(而非0050 ETF),对应代码应为^TWII,需你确认"
+        },
+        "获取信息的url": "https://www.google.com/finance/quote/0050:TPE"
+      }
+    },
+    "股市风险指标": {
+      "说明": "以下四个是宏观估值/风险指标,不是可以简单调API拿到单一实时数字的东西,大多数按季度或月度更新,具体数值和分区标准在不同数据商之间会有出入,我列出的是我查证时(2026年7月)看到的读数和常见分区,不是我编的,但你部署时应该以数据源当天页面为准,不要写死。",
+      "巴菲特指标": {
+        "英文名": "Buffett Indicator(Market Cap to GDP Ratio)",
+        "定义": "美国全市场总市值(通常用Wilshire 5000代表)÷美国GDP",
+        "当前数字(2026年7月查证时)": "约211%~236%(不同数据商统计口径/更新频率不同,读数有差异,例如gurufocus约235.6%,currentmarketvaluation约219%,litefinance约203%~211%)",
+        "分区标准(不同数据源口径不完全一致,列出常见两种)": {
+          "口径A(litefinance)": "<=89%显著低估 · 89-115%温和低估 · 115-140%合理 · 140-165%温和高估 · >165%显著高估",
+          "口径B(marketcrash.net,更宽松)": "<80%低估 · 80-120%合理偏紧 · >120%显著高估 · >150%极端泡沫"
+        },
+        "获取信息的url": "https://www.currentmarketvaluation.com/models/buffett-indicator.php"
+      },
+      "巴菲特指标的修正版本": {
+        "英文名": "Modified Buffett Indicator: TMC / (GDP + Total Assets of Federal Reserve)",
+        "定义": "gurufocus提出的改良版,分母把美联储资产负债表总资产也加进GDP里,用来部分修正QE时期传统指标失真的问题",
+        "当前数字(2026年7月查证时)": "约194.5%(来源gurufocus,同一页面同时给出传统版和修正版两个数字)",
+        "获取信息的url": "https://www.gurufocus.com/stock-market-valuations.php"
+      },
+      "席勒市盈率": {
+        "英文名": "Shiller PE / CAPE Ratio",
+        "定义": "标普500现价 ÷ 过去10年通胀调整后平均每股盈利",
+        "当前数字(2026年7月查证时)": "约39.75~41.97(不同数据源略有差异,gurufocus报39.75,multpl报41.97),历史长期均值约17,中位数约16",
+        "分区标准(marketcrash.net口径,注意与其他来源不完全一致)": "<25正常 · >=25警戒 · >35高危",
+        "获取信息的url": "https://www.multpl.com/shiller-pe"
+      },
+      "Tobin's Q比率": {
+        "英文名": "Tobin's Q Ratio",
+        "定义": "股票市场总市值 ÷ 企业资产重置成本,数据来自美联储Z.1季度报告,更新频率是季度而非实时",
+        "当前数字": "我没能查到一个我有把握的当前具体读数——gurufocus那个页面显示的是'0',这明显是数据源本身的异常/未更新,我不会拿这个数字充数,建议直接看下面链接的最新月度文章",
+        "获取信息的url": "https://www.advisorperspectives.com/dshort/updates/2026/06/03/buffett-valuation-indicator-may-2026(可搜索同系列'Q-Ratio and Market Valuation'当月文章)"
+      }
+    },
+    "其他加密货币": {
+      "ETH": {
+        "英文名": "Ethereum",
+        "中文名": "以太坊",
+        "CoinGecko_ID": "ethereum",
+        "当前数字": "current_price(来源CoinGecko)",
+        "最高点": "ath(来源CoinGecko,同一接口自带,不需要另外算)",
+        "最高点下跌幅度": "ath_change_percentage(来源CoinGecko,同一接口自带的现成字段,负数表示离历史高点还差多少百分比)",
+        "获取信息的url": "https://api.coingecko.com/api/v3/coins/ethereum"
+      },
+      "ADA": {
+        "英文名": "Cardano",
+        "中文名": "艾达币",
+        "CoinGecko_ID": "cardano",
+        "当前数字": "current_price(来源CoinGecko)",
+        "最高点": "ath(来源CoinGecko,同一接口自带,不需要另外算)",
+        "最高点下跌幅度": "ath_change_percentage(来源CoinGecko,同一接口自带的现成字段,负数表示离历史高点还差多少百分比)",
+        "获取信息的url": "https://api.coingecko.com/api/v3/coins/cardano"
+      },
+      "AVAX": {
+        "英文名": "Avalanche",
+        "中文名": "雪崩币",
+        "CoinGecko_ID": "avalanche-2",
+        "当前数字": "current_price(来源CoinGecko)",
+        "最高点": "ath(来源CoinGecko,同一接口自带,不需要另外算)",
+        "最高点下跌幅度": "ath_change_percentage(来源CoinGecko,同一接口自带的现成字段,负数表示离历史高点还差多少百分比)",
+        "获取信息的url": "https://api.coingecko.com/api/v3/coins/avalanche-2"
+      },
+      "SOL": {
+        "英文名": "Solana",
+        "中文名": "索拉纳",
+        "CoinGecko_ID": "solana",
+        "当前数字": "current_price(来源CoinGecko)",
+        "最高点": "ath(来源CoinGecko,同一接口自带,不需要另外算)",
+        "最高点下跌幅度": "ath_change_percentage(来源CoinGecko,同一接口自带的现成字段,负数表示离历史高点还差多少百分比)",
+        "获取信息的url": "https://api.coingecko.com/api/v3/coins/solana"
+      },
+      "HYPE": {
+        "英文名": "Hyperliquid",
+        "中文名": "Hyperliquid",
+        "CoinGecko_ID": "hyperliquid",
+        "当前数字": "current_price(来源CoinGecko)",
+        "最高点": "ath(来源CoinGecko,同一接口自带,不需要另外算)",
+        "最高点下跌幅度": "ath_change_percentage(来源CoinGecko,同一接口自带的现成字段,负数表示离历史高点还差多少百分比)",
+        "获取信息的url": "https://api.coingecko.com/api/v3/coins/hyperliquid"
+      },
+      "BNB": {
+        "英文名": "BNB",
+        "中文名": "币安币",
+        "CoinGecko_ID": "binancecoin",
+        "当前数字": "current_price(来源CoinGecko)",
+        "最高点": "ath(来源CoinGecko,同一接口自带,不需要另外算)",
+        "最高点下跌幅度": "ath_change_percentage(来源CoinGecko,同一接口自带的现成字段,负数表示离历史高点还差多少百分比)",
+        "获取信息的url": "https://api.coingecko.com/api/v3/coins/binancecoin"
+      },
+      "BGB": {
+        "英文名": "Bitget Token",
+        "中文名": "Bitget平台币",
+        "CoinGecko_ID": "bitget-token",
+        "当前数字": "current_price(来源CoinGecko)",
+        "最高点": "ath(来源CoinGecko,同一接口自带,不需要另外算)",
+        "最高点下跌幅度": "ath_change_percentage(来源CoinGecko,同一接口自带的现成字段,负数表示离历史高点还差多少百分比)",
+        "获取信息的url": "https://api.coingecko.com/api/v3/coins/bitget-token"
+      },
+      "OKX": {
+        "英文名": "OKB(注意:'OKX'本身是交易所名称,不是代币;对应平台币的正确代码是OKB,这里按你大概率想要的OKB处理,如果你指的是别的东西请告诉我)",
+        "中文名": "欧易OKX交易所平台币",
+        "CoinGecko_ID": "okb",
+        "当前数字": "current_price(来源CoinGecko)",
+        "最高点": "ath(来源CoinGecko)",
+        "最高点下跌幅度": "ath_change_percentage(来源CoinGecko)",
+        "获取信息的url": "https://api.coingecko.com/api/v3/coins/okb"
+      }
+    }
+  }
+}
