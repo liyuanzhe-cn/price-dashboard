@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行情看板</title>
+<style>
+  :root{
+    --bg:#0a0e12;
+    --panel:#12171d;
+    --line:#1f2830;
+    --text:#dfe6ec;
+    --dim:#7b8794;
+    --amber:#d4a537;
+    --up:#3fb950;
+    --down:#f85149;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--sans); padding:20px 16px 60px;
+  }
+  .page{max-width:1400px; margin:0 auto;}
+  .estimated{color:var(--amber) !important; opacity:.9;}
+  .estimated::after{content:" ≈"; font-size:10px;}
+  h1{
+    font-family:var(--mono); font-size:16px; font-weight:600;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--amber);
+    margin:0 0 4px;
+  }
+  .topbar{
+    display:flex; justify-content:space-between; align-items:baseline;
+    flex-wrap:wrap; gap:8px; border-bottom:1px solid var(--line);
+    padding-bottom:12px; margin-bottom:20px;
+  }
+  .meta{font-family:var(--mono); font-size:11px; color:var(--dim);}
+  .meta b{color:var(--text);}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(300px,1fr)); gap:14px;}
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+    padding:14px 16px;
+  }
+  .panel h2{
+    font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--dim); margin:0 0 10px; display:flex; justify-content:space-between; align-items:center;
+  }
+  .row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:6px 0; border-bottom:1px dashed var(--line); font-size:13px; gap:8px;
+  }
+  .row:last-child{border-bottom:none;}
+  .row .label{color:var(--dim);}
+  .row .label a{color:var(--dim); text-decoration:none; border-bottom:1px dotted var(--dim);}
+  .row .label a:hover{color:var(--amber); border-color:var(--amber);}
+  .val{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .up{color:var(--up);}
+  .down{color:var(--down);}
+  .dim{color:var(--dim);}
+  .sub{font-size:11px; color:var(--dim); margin-top:8px; line-height:1.5;}
+  .exp-line{font-size:11px; margin:-4px 0 6px; padding-left:2px;}
+  .exp-line.zone-red{color:#f85149;}
+  .exp-line.zone-yellow{color:#d4a537;}
+  .exp-line.zone-green{color:#3fb950;}
+  .ticker-list{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+    gap:8px 14px;
+  }
+  .ticker-list .row{
+    display:grid;
+    grid-template-columns:1fr auto auto;
+    align-items:center;
+    gap:6px 10px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:8px 10px;
+    background:#0d1319;
+  }
+  .ticker-list .row .val.dim{grid-column:1/-1; text-align:right;}
+  .ticker-list .row .val{text-align:right;}
+  .ticker-list .row a.sym{color:var(--text); text-decoration:none; font-family:var(--mono);}
+  .ticker-list .row a.sym:hover{color:var(--amber);}
+
+  .risk-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(440px, 1fr));
+    gap:16px;
+  }
+  @media (max-width: 900px){
+    .risk-grid{grid-template-columns:1fr;}
+  }
+  .risk-card{
+    background:#0d1319; border:1px solid var(--line); border-radius:8px;
+    padding:16px 18px; display:flex; flex-direction:column; gap:8px;
+  }
+  .risk-card .rc-name a{color:var(--text); text-decoration:none; font-family:var(--mono); font-size:14px; letter-spacing:.03em;}
+  .risk-card .rc-name a:hover{color:var(--amber);}
+  .risk-card .rc-value-row{display:flex; align-items:baseline; justify-content:space-between; gap:8px;}
+  .risk-card .rc-value{font-family:var(--mono); font-size:32px; font-variant-numeric:tabular-nums;}
+  .risk-card .rc-badge{font-family:var(--mono); font-size:13px; padding:3px 10px; border-radius:4px; border:1px solid currentColor; white-space:nowrap;}
+  .risk-card .rc-desc{font-size:12px; color:var(--dim); line-height:1.6;}
+  .risk-card .rc-sd{font-size:11px; color:var(--dim);}
+  .section-title{grid-column:1/-1; font-family:var(--mono); color:var(--amber); font-size:12px; letter-spacing:.08em; text-transform:uppercase; margin:26px 0 4px; border-bottom:1px solid var(--line); padding-bottom:6px;}
+  .badge{font-family:var(--mono); font-size:10px; padding:1px 5px; border-radius:3px; border:1px solid var(--line); color:var(--dim);}
+  .errbox{margin-top:20px; font-family:var(--mono); font-size:11px; color:var(--down); white-space:pre-wrap;}
+  .asof{font-size:10px; color:var(--dim); margin-bottom:8px;}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+<div class="page">
+
+<div class="topbar">
+  <div>
+    <h1>行情看板</h1>
+    <div class="meta">数据来源于本机VPS代理 · 每60秒向后端要一次最新数据 · 后端更新时间: <b id="updatedAt">--</b> · 下次刷新: <b id="countdown">60</b>s</div>
+  </div>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <a href="/us.html" style="font-family:var(--mono); font-size:12px; color:var(--dim); text-decoration:none; border:1px solid var(--line); border-radius:4px; padding:8px 14px;">美股500强 →</a>
+    <button id="exportBrowserBtn" onclick="exportBrowserScreenshot()"
+      style="font-family:var(--mono); font-size:12px; background:var(--panel); color:var(--amber);
+             border:1px solid var(--amber); border-radius:4px; padding:8px 14px; cursor:pointer;">
+      浏览器截图导出 ⬇
+    </button>
+    <button id="exportBtn" onclick="window.open('/export.png','_blank')"
+      style="font-family:var(--mono); font-size:12px; background:var(--panel); color:var(--dim);
+             border:1px solid var(--line); border-radius:4px; padding:8px 14px; cursor:pointer;">
+      服务器渲染长图 ⬇
+    </button>
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- BTC -->
+  <div class="panel">
+    <h2>比特币</h2>
+    <div class="row"><span class="label">价格 (USD)</span><span class="val" id="btc_price">--</span></div>
+    <div class="row"><span class="label">24h涨跌</span><span class="val" id="btc_chg">--</span></div>
+    <div class="row"><span class="label">距历史高点</span><span class="val" id="btc_ath_dd">--</span></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_btc_mcap" target="_blank">比特币市值</a></span><span class="val" id="btc_mcap">--</span></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_btc_dom_incl" target="_blank">BTC市占率(含稳定币)</a></span><span class="val" id="btc_dom_incl">--</span></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_btc_dom_excl" target="_blank">BTC市占率(不含稳定币)</a></span><span class="val" id="btc_dom_excl">--</span></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_total2" target="_blank">TOTAL2市值</a></span><span class="val" id="total2_mcap">--</span></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_total3" target="_blank">TOTAL3市值</a></span><span class="val" id="total3_mcap">--</span></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_mvrv" target="_blank">MVRV</a></span><span class="val" id="btc_mvrv">--</span></div>
+    <div class="exp-line" id="exp_mvrv"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_mvrvz" target="_blank">MVRV-Z</a></span><span class="val" id="btc_mvrvz">--</span></div>
+    <div class="exp-line" id="exp_mvrv_zscore"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_realized" target="_blank">Realized Price</a></span><span class="val" id="btc_realized">--</span></div>
+    <div class="exp-line" id="exp_realized_price"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_balanced" target="_blank">Balanced Price</a></span><span class="val" id="btc_balanced">--</span></div>
+    <div class="exp-line" id="exp_balanced_price"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_cvdd" target="_blank">CVDD</a></span><span class="val" id="btc_cvdd">--</span></div>
+    <div class="exp-line" id="exp_cvdd"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_nupl" target="_blank">NUPL(净未实现盈亏)</a></span><span class="val" id="btc_nupl">--</span></div>
+    <div class="exp-line" id="exp_nupl"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_rhodl" target="_blank">RHODL比率</a></span><span class="val" id="btc_rhodl">--</span></div>
+    <div class="exp-line" id="exp_rhodl"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_ma200w" target="_blank">200周均线</a></span><span class="val" id="btc_ma200w">--</span></div>
+    <div class="exp-line" id="exp_ma_200w"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_ma200d" target="_blank">200日均线</a></span><span class="val" id="btc_ma200d">--</span></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_supply_profit" target="_blank">盈利中的百分比</a></span><span class="val" id="btc_supply_profit">--</span></div>
+    <div class="exp-line" id="exp_supply_in_profit_pct"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_60d_return" target="_blank">60日累计涨幅</a></span><span class="val" id="btc_60d_return">--</span></div>
+    <div class="exp-line" id="exp_btc_60d_return"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_sopr" target="_blank">SOPR(卖出盈亏比)</a></span><span class="val" id="btc_sopr">--</span></div>
+    <div class="exp-line" id="exp_sopr"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_puell" target="_blank">Puell Multiple(矿工投降)</a></span><span class="val" id="btc_puell">--</span></div>
+    <div class="exp-line" id="exp_puell_multiple"></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_halving" target="_blank">减半倒计时</a></span><span class="val" id="btc_halving">--</span></div>
+    <div class="row"><span class="label"><a href="#" id="lnk_fear_greed" target="_blank">恐惧贪婪指数</a></span><span class="val" id="btc_fear_greed">--</span></div>
+  </div>
+
+  <!-- MSTR -->
+  <div class="panel" style="grid-column:span 2;">
+    <h2>MSTR <span class="badge">微策略</span> <a href="#" id="lnk_mstr_treasury" target="_blank" style="font-size:10px;">bitcointreasuries →</a></h2>
+    <div class="row"><span class="label">现价</span><span class="val" id="mstr_price">--</span><span class="val" id="mstr_chg">--</span></div>
+    <div class="row"><span class="label">距历史高点</span><span class="val" id="mstr_ath_dd">--</span></div>
+    <div class="asof" id="mstr_asof"></div>
+    <div class="row"><span class="label">BTC Holdings</span><span class="val" id="mstr_btc_holdings">--</span></div>
+    <div class="row"><span class="label">BTC Value</span><span class="val" id="mstr_btc_value">--</span></div>
+    <div class="row"><span class="label">Total Cost Basis</span><span class="val" id="mstr_cost_basis">--</span></div>
+    <div class="row"><span class="label">Avg Cost / BTC</span><span class="val" id="mstr_avg_cost">--</span></div>
+    <div class="row"><span class="label">Market Cap</span><span class="val" id="mstr_mcap">--</span></div>
+    <div class="row"><span class="label">Enterprise Value</span><span class="val" id="mstr_ev">--</span></div>
+    <div class="row"><span class="label">mNAV (EV)</span><span class="val" id="mstr_mnav_ev">--</span></div>
+    <div class="row"><span class="label">mNAV (Basic)</span><span class="val" id="mstr_mnav_basic">--</span></div>
+    <div class="row"><span class="label">mNAV (Diluted)</span><span class="val" id="mstr_mnav_diluted">--</span></div>
+    <div class="row"><span class="label">BTC / Share (Basic)</span><span class="val" id="mstr_btcps_basic">--</span></div>
+    <div class="row"><span class="label">BTC / Share (Diluted)</span><span class="val" id="mstr_btcps_diluted">--</span></div>
+
+
+    <h2 style="margin-top:16px;">自2020-08-11采纳比特币策略以来</h2>
+    <div class="row"><span class="label">MSTR涨跌幅(拆股调整后)</span><span class="val" id="mstr_since_return">--</span></div>
+    <div class="row"><span class="label">同期BTC涨跌幅</span><span class="val" id="mstr_since_btc_return">--</span></div>
+    <div class="row"><span class="label">MSTR涨跌幅/BTC涨跌幅</span><span class="val" id="mstr_since_ratio">--</span></div>
+
+    <h2 style="margin-top:16px;">雅虎财经补充</h2>
+    <div class="row"><span class="label">Beta系数</span><span class="val" id="mstr_beta">--</span></div>
+    <div class="row"><span class="label">市值(雅虎财经)</span><span class="val" id="mstr_yahoo_mcap">--</span></div>
+
+    <h2 style="margin-top:16px;">STRC飞轮(<a href="#" id="lnk_mstr_flywheel" target="_blank" style="font-size:11px;">mstr.fuckbtc.com →</a>)</h2>
+    <div class="row"><span class="label">STRC股息率</span><span class="val" id="mstr_strc_div_rate">--</span></div>
+    <div class="row"><span class="label">STRC单券Runway</span><span class="val" id="mstr_strc_runway">--</span></div>
+    <div class="row"><span class="label">全局Runway</span><span class="val" id="mstr_global_runway">--</span></div>
+    <div class="row"><span class="label">官方mNAV(EV口径)</span><span class="val" id="mstr_mnav_official">--</span></div>
+
+    <h2 style="margin-top:16px;">优先股(现价 + 链接)</h2>
+    <div class="ticker-list" id="mstr_preferreds"></div>
+  </div>
+
+  <!-- ASST -->
+  <div class="panel">
+    <h2>ASST <span class="badge">Strive</span> <a href="#" id="lnk_asst_treasury" target="_blank" style="font-size:10px;">bitcointreasuries →</a></h2>
+    <div class="row"><span class="label">现价</span><span class="val" id="asst_price">--</span><span class="val" id="asst_chg">--</span></div>
+    <div class="row"><span class="label">距历史高点</span><span class="val" id="asst_ath_dd">--</span></div>
+    <div class="asof" id="asst_asof"></div>
+    <div class="row"><span class="label">BTC Holdings</span><span class="val" id="asst_btc_holdings">--</span></div>
+    <div class="row"><span class="label">BTC Value</span><span class="val" id="asst_btc_value">--</span></div>
+    <div class="row"><span class="label">Total Cost Basis</span><span class="val" id="asst_cost_basis">--</span></div>
+    <div class="row"><span class="label">Avg Cost / BTC</span><span class="val" id="asst_avg_cost">--</span></div>
+    <div class="row"><span class="label">Market Cap</span><span class="val" id="asst_mcap">--</span></div>
+    <div class="row"><span class="label">Enterprise Value</span><span class="val" id="asst_ev">--</span></div>
+    <div class="row"><span class="label">mNAV (EV)</span><span class="val" id="asst_mnav_ev">--</span></div>
+    <div class="row"><span class="label">mNAV (Basic)</span><span class="val" id="asst_mnav_basic">--</span></div>
+    <div class="row"><span class="label">mNAV (Diluted)</span><span class="val" id="asst_mnav_diluted">--</span></div>
+    <div class="row"><span class="label">BTC / Share (Basic)</span><span class="val" id="asst_btcps_basic">--</span></div>
+    <div class="row"><span class="label">BTC / Share (Diluted)</span><span class="val" id="asst_btcps_diluted">--</span></div>
+  </div>
+
+  <div class="section-title">自选股(按跌幅排序)</div>
+  <div class="panel" style="grid-column:1/-1;">
+    <div class="ticker-list" id="watchlist"></div>
+  </div>
+
+  <div class="section-title">指数(按跌幅排序)</div>
+  <div class="panel" style="grid-column:1/-1;">
+    <div class="ticker-list" id="indices"></div>
+  </div>
+
+  <div class="section-title">贵金属</div>
+  <div class="panel" style="grid-column:1/-1;">
+    <div class="ticker-list" id="metals"></div>
+  </div>
+
+  <div class="section-title">其他加密货币</div>
+  <div class="panel" style="grid-column:1/-1;">
+    <div class="ticker-list" id="crypto_extra"></div>
+  </div>
+
+  <div class="section-title">股市风险指标</div>
+  <div class="panel" style="grid-column:1/-1;">
+    <div class="risk-grid" id="risk_indicators"></div>
+  </div>
+
+</div>
+
+<div class="errbox" id="errbox"></div>
+
+<div style="text-align:right; margin-top:30px;">
+  <a href="/methodology.txt" download="dashboard_methodology.txt"
+     style="color:#3a4552; font-size:10px; text-decoration:none;">下载说明日志</a>
+</div>
+
+</div><!-- /.page -->
+
+<script>
+const REFRESH_SEC = 60;
+let countdown = REFRESH_SEC;
+let fastRetryCount = 0;
+const MAX_FAST_RETRY = 15;      // 最多快速重试15次(配合下面3秒间隔,最长等45秒左右)
+const FAST_RETRY_SEC = 3;       // 后端数据还没准备好时,3秒后再试一次,不用等满60秒
+
+function fmtNum(n, digits=2){
+  if(n === null || n === undefined || isNaN(n)) return '--';
+  return Number(n).toLocaleString(undefined, {minimumFractionDigits:digits, maximumFractionDigits:digits});
+}
+function fmtMoney(n){
+  if(n === null || n === undefined || isNaN(n)) return '--';
+  if(Math.abs(n) >= 1e9) return '$'+(n/1e9).toFixed(2)+'B';
+  if(Math.abs(n) >= 1e6) return '$'+(n/1e6).toFixed(2)+'M';
+  return '$'+fmtNum(n,0);
+}
+function fmtPct(n){
+  if(n === null || n === undefined || isNaN(n)) return '--';
+  return (n>=0?'+':'') + n.toFixed(2) + '%';
+}
+function pctClass(n){
+  if(n === null || n === undefined || isNaN(n)) return '';
+  return n >= 0 ? 'up' : 'down';
+}
+function extractOnchainValue(obj){
+  if(!obj) return null;
+  if(typeof obj === 'number') return obj;
+  for(const k of Object.keys(obj)){
+    if(/value|price|mvrv|score/i.test(k) && typeof obj[k] === 'number') return obj[k];
+  }
+  return null;
+}
+
+function applyExplanation(elId, exp){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  if(!exp){
+    el.textContent = '';
+    el.className = 'exp-line';
+    return;
+  }
+  el.textContent = exp.text || '';
+  el.className = 'exp-line zone-' + (exp.zone || '');
+}
+
+function renderTickerRow(container, name, sym, price, chgPct, linkBase, athInfo, priceSource){
+  const url = linkBase.replace('{sym}', encodeURIComponent(sym));
+  const div = document.createElement('div');
+  div.className = 'row';
+  let ddHtml = '';
+  if (athInfo && athInfo.high) {
+    const dd = (price!=null) ? (price/athInfo.high-1)*100 : null;
+    ddHtml = `<span class="val dim" style="font-size:11px;" title="基于yfinance全历史月线'最高价'算出,只能精确到月,不能精确到具体哪一天">
+      距ATH ${fmtPct(dd)}(最高${fmtNum(athInfo.high)},${athInfo.date||'--'})</span>`;
+  }
+  const sourceBadge = priceSource === 'bitget_perp_24h'
+    ? `<span class="val dim" style="font-size:10px; color:#d4a537; border:1px solid #d4a537; border-radius:3px; padding:0 4px; display:inline-block; width:fit-content; margin-left:auto;" title="美股已收盘,这是Bitget股票永续合约的实时价格,跟踪股价但存在正常基差,不等同于交易所官方成交价">夜盘·Bitget</span>`
+    : '';
+  div.innerHTML = `
+    <span class="label"><a class="sym" href="${url}" target="_blank">${name}</a></span>
+    <span class="val">${price===null||price===undefined?'--':fmtNum(price)}</span>
+    <span class="val ${pctClass(chgPct)}">${fmtPct(chgPct)}</span>
+    ${sourceBadge}
+    ${ddHtml}
+  `;
+  container.appendChild(div);
+}
+
+function renderCryptoRow(container, name, row, linkBase, coingeckoId){
+  const url = linkBase.replace('{id}', encodeURIComponent(coingeckoId||''));
+  const div = document.createElement('div');
+  div.className = 'row';
+  const price = row ? row.price : null;
+  const chg = row ? row.change_pct : null;
+  const athChg = row ? row.ath_change_pct : null;
+  const athPrice = row ? row.ath : null;
+  const athDate = row && row.ath_date ? row.ath_date.slice(0,10) : '--';
+  div.innerHTML = `
+    <span class="label"><a class="sym" href="${url}" target="_blank">${name}</a></span>
+    <span class="val">${price===null||price===undefined?'--':fmtNum(price)}</span>
+    <span class="val ${pctClass(chg)}">${fmtPct(chg)}</span>
+    <span class="val dim" style="font-size:11px;" title="CoinGecko自带字段,精确到天,不是我们自己算的">距ATH ${fmtPct(athChg)}(最高${athPrice!=null?fmtNum(athPrice):'--'},${athDate})</span>
+  `;
+  container.appendChild(div);
+}
+
+function renderRiskIndicatorRow(container, name, value, unit, url, desc, zone, ratingCn, stdDev){
+  const div = document.createElement('div');
+  div.className = 'risk-card';
+  const valText = (value===null||value===undefined) ? '--' : (fmtNum(value,2) + (unit||''));
+  const zoneLabelMap = {very_low:'强烈低估', low:'低估', mid:'合理', high:'高估', very_high:'强烈高估'};
+  const zoneColorMap = {very_low:'#2ea043', low:'#3fb950', mid:'#d4a537', high:'#e08a3c', very_high:'#f85149'};
+  const zoneLabel = ratingCn || zoneLabelMap[zone] || (value===null ? '暂无数据' : '');
+  const zoneColor = zoneColorMap[zone] || '#7b8794';
+  const badge = zoneLabel ? `<span class="rc-badge" style="color:${zoneColor};">${zoneLabel}</span>` : '';
+  const sdLine = (stdDev!=null) ? `<div class="rc-sd">当前偏离历史均值 ${stdDev} 个标准差</div>` : '';
+  div.innerHTML = `
+    <div class="rc-name"><a href="${url}" target="_blank">${name}</a></div>
+    <div class="rc-value-row">
+      <span class="rc-value" style="color:${zoneColor};">${valText}</span>
+      ${badge}
+    </div>
+    ${sdLine}
+    <div class="rc-desc">${desc||''}</div>
+  `;
+  container.appendChild(div);
+}
+
+function setFieldValue(prefix, field, text, isEstimated){
+  const el = document.getElementById(`${prefix}_${field}`);
+  el.textContent = text;
+  el.classList.toggle('estimated', !!isEstimated);
+  el.title = isEstimated ? '此数字不是bitcointreasuries.net页面上直接抓到的原始文本,是用已抓到的其他字段(如Market Cap/Enterprise Value/BTC Value)换算出来的近似值' : '';
+}
+
+function renderTreasuryGroup(prefix, quote, treasury, athInfo){
+  const priceEl = document.getElementById(`${prefix}_price`);
+  const isBitget = quote && quote.price_source === 'bitget_perp_24h';
+  priceEl.innerHTML = (quote && quote.price!=null)
+    ? '$'+fmtNum(quote.price) + (isBitget ? ' <span style="font-size:10px; color:#d4a537; border:1px solid #d4a537; border-radius:3px; padding:0 4px;" title="美股已收盘,这是Bitget股票永续合约的实时价格,跟踪股价但存在正常基差,不等同于交易所官方成交价">夜盘·Bitget</span>' : '')
+    : '--';
+  const chgEl = document.getElementById(`${prefix}_chg`);
+  const chg = quote ? quote.change_pct : null;
+  chgEl.textContent = fmtPct(chg);
+  chgEl.className = 'val ' + pctClass(chg);
+
+  const ddEl = document.getElementById(`${prefix}_ath_dd`);
+  if (athInfo && athInfo.high && quote && quote.price!=null) {
+    const dd = (quote.price/athInfo.high-1)*100;
+    ddEl.textContent = `${fmtPct(dd)}(最高$${fmtNum(athInfo.high)},${athInfo.date||'--'})`;
+    ddEl.className = 'val ' + pctClass(dd);
+  } else {
+    ddEl.textContent = '--';
+    ddEl.className = 'val';
+  }
+  ddEl.title = '基于yfinance全历史月线"最高价"算出,只能精确到月,不能精确到具体哪一天';
+
+  const t = treasury || {};
+  const est = new Set(t.estimated_fields || []);
+  document.getElementById(`${prefix}_asof`).textContent = t.as_of ? ('数据截至: ' + t.as_of) : '';
+
+  setFieldValue(prefix, 'btc_holdings', t.btc_holdings!=null ? '₿'+fmtNum(t.btc_holdings,0) : '--', est.has('btc_holdings'));
+  setFieldValue(prefix, 'btc_value', fmtMoney(t.btc_value), false);
+  setFieldValue(prefix, 'cost_basis', fmtMoney(t.total_cost_basis), false);
+  setFieldValue(prefix, 'avg_cost', t.avg_cost_per_btc!=null ? '$'+fmtNum(t.avg_cost_per_btc,0) : '--', false);
+  setFieldValue(prefix, 'mcap', fmtMoney(t.market_cap), false);
+  setFieldValue(prefix, 'ev', fmtMoney(t.enterprise_value), false);
+  setFieldValue(prefix, 'mnav_ev', t.mnav_ev!=null ? fmtNum(t.mnav_ev,2)+'x' : '--', est.has('mnav_ev'));
+  setFieldValue(prefix, 'mnav_basic', t.mnav_basic!=null ? fmtNum(t.mnav_basic,2)+'x' : '--', est.has('mnav_basic'));
+  setFieldValue(prefix, 'mnav_diluted', t.mnav_diluted!=null ? fmtNum(t.mnav_diluted,2)+'x' : '--', est.has('mnav_diluted'));
+  setFieldValue(prefix, 'btcps_basic', t.btc_per_share_basic!=null ? fmtNum(t.btc_per_share_basic,6) : '--', false);
+  setFieldValue(prefix, 'btcps_diluted', t.btc_per_share_diluted!=null ? fmtNum(t.btc_per_share_diluted,6) : '--', false);
+}
+
+async function refresh(){
+  try{
+    const res = await fetch('/api/data', {cache:'no-store'});
+    const data = await res.json();
+    const links = data.links || {};  // 提到最前面声明,避免下面提前引用links导致的JS暂时性死区报错
+
+    document.getElementById('updatedAt').textContent = data.updated_at || '--';
+
+    document.getElementById('btc_price').textContent = data.btc && data.btc.price_usd ? '$'+fmtNum(data.btc.price_usd,0) : '--';
+    const chgEl = document.getElementById('btc_chg');
+    chgEl.textContent = fmtPct(data.btc && data.btc.change_24h_pct);
+    chgEl.className = 'val ' + pctClass(data.btc && data.btc.change_24h_pct);
+    const athEl = document.getElementById('btc_ath_dd');
+    athEl.textContent = fmtPct(data.btc && data.btc.ath_change_pct);
+    athEl.className = 'val ' + pctClass(data.btc && data.btc.ath_change_pct);
+
+    const btcData = data.btc || {};
+    document.getElementById('btc_mcap').textContent = btcData.btc_market_cap!=null ? '$'+fmtNum(btcData.btc_market_cap/1e9,1)+'B' : '--';
+    document.getElementById('btc_dom_incl').textContent = btcData.btc_dominance_incl_stablecoins!=null ? fmtNum(btcData.btc_dominance_incl_stablecoins,2)+'%' : '--';
+    document.getElementById('btc_dom_excl').textContent = btcData.btc_dominance_excl_stablecoins!=null ? fmtNum(btcData.btc_dominance_excl_stablecoins,2)+'%' : '--';
+    document.getElementById('total2_mcap').textContent = btcData.total2_market_cap!=null ? '$'+fmtNum(btcData.total2_market_cap/1e9,1)+'B' : '--';
+    document.getElementById('total3_mcap').textContent = btcData.total3_market_cap!=null ? '$'+fmtNum(btcData.total3_market_cap/1e9,1)+'B' : '--';
+
+    const oc = data.onchain || {};
+    document.getElementById('btc_mvrv').textContent = fmtNum(extractOnchainValue(oc.mvrv), 3);
+    document.getElementById('btc_mvrvz').textContent = fmtNum(extractOnchainValue(oc.mvrv_zscore), 3);
+    document.getElementById('btc_realized').textContent = extractOnchainValue(oc.realized_price)!==null ? '$'+fmtNum(extractOnchainValue(oc.realized_price),0) : '--';
+    document.getElementById('btc_balanced').textContent = extractOnchainValue(oc.balanced_price)!==null ? '$'+fmtNum(extractOnchainValue(oc.balanced_price),0) : '--';
+    document.getElementById('btc_cvdd').textContent = extractOnchainValue(oc.cvdd)!==null ? '$'+fmtNum(extractOnchainValue(oc.cvdd),0) : '--';
+    document.getElementById('btc_nupl').textContent = fmtNum(extractOnchainValue(oc.nupl), 3);
+    document.getElementById('btc_rhodl').textContent = fmtNum(extractOnchainValue(oc.rhodl), 2);
+    document.getElementById('btc_ma200w').textContent = extractOnchainValue(oc.ma_200w)!==null ? '$'+fmtNum(extractOnchainValue(oc.ma_200w),0) : '--';
+    document.getElementById('btc_ma200d').textContent = oc.ma_200d!=null ? '$'+fmtNum(oc.ma_200d,0) : '--';
+    document.getElementById('btc_supply_profit').textContent = extractOnchainValue(oc.supply_in_profit_pct)!==null ? fmtNum(extractOnchainValue(oc.supply_in_profit_pct),1)+'%' : '--';
+    document.getElementById('btc_60d_return').textContent = oc.btc_60d_return_pct!=null ? fmtPct(oc.btc_60d_return_pct) : '--';
+    document.getElementById('btc_sopr').textContent = fmtNum(extractOnchainValue(oc.sopr), 3);
+    document.getElementById('btc_puell').textContent = fmtNum(extractOnchainValue(oc.puell_multiple), 2);
+
+    // v20新增:9个链上指标的一句话解释+三色标注,直接用后端算好的结果
+    const explanations = oc.explanations || {};
+    applyExplanation('exp_mvrv', explanations.mvrv);
+    applyExplanation('exp_mvrv_zscore', explanations.mvrv_zscore);
+    applyExplanation('exp_realized_price', explanations.realized_price);
+    applyExplanation('exp_balanced_price', explanations.balanced_price);
+    applyExplanation('exp_cvdd', explanations.cvdd);
+    applyExplanation('exp_ma_200w', explanations.ma_200w);
+    applyExplanation('exp_btc_60d_return', explanations.btc_60d_return);
+    applyExplanation('exp_sopr', explanations.sopr);
+    applyExplanation('exp_puell_multiple', explanations.puell_multiple);
+    applyExplanation('exp_nupl', explanations.nupl);
+    applyExplanation('exp_rhodl', explanations.rhodl);
+    applyExplanation('exp_supply_in_profit_pct', explanations.supply_in_profit_pct);
+    const halving = oc.halving;
+    document.getElementById('btc_halving').textContent = (halving && halving.days_remaining!=null)
+      ? `${fmtNum(halving.days_remaining,0)} 天(区块${halving.current_height}/${halving.next_halving_block})`
+      : '--';
+    const fg = oc.fear_greed;
+    document.getElementById('btc_fear_greed').textContent = (fg && fg.value!=null)
+      ? `${fmtNum(fg.value,0)}(${fg.classification||''})`
+      : '--';
+
+    if(links.BTC_MCAP) document.getElementById('lnk_btc_mcap').href = links.BTC_MCAP;
+    if(links.BTC_DOMINANCE) { document.getElementById('lnk_btc_dom_incl').href = links.BTC_DOMINANCE; document.getElementById('lnk_btc_dom_excl').href = links.BTC_DOMINANCE; }
+    if(links.TOTAL2) document.getElementById('lnk_total2').href = links.TOTAL2;
+    if(links.TOTAL3) document.getElementById('lnk_total3').href = links.TOTAL3;
+    if(links.BTC_MVRV) document.getElementById('lnk_mvrv').href = links.BTC_MVRV;
+    if(links.BTC_MVRV_Z) document.getElementById('lnk_mvrvz').href = links.BTC_MVRV_Z;
+    if(links.BTC_REALIZED_PRICE) document.getElementById('lnk_realized').href = links.BTC_REALIZED_PRICE;
+    if(links.BTC_BALANCED_PRICE) document.getElementById('lnk_balanced').href = links.BTC_BALANCED_PRICE;
+    if(links.BTC_CVDD) document.getElementById('lnk_cvdd').href = links.BTC_CVDD;
+    if(links.BTC_NUPL) document.getElementById('lnk_nupl').href = links.BTC_NUPL;
+    if(links.BTC_RHODL) document.getElementById('lnk_rhodl').href = links.BTC_RHODL;
+    if(links.BTC_MA200W) document.getElementById('lnk_ma200w').href = links.BTC_MA200W;
+    if(links.BTC_MA200D) document.getElementById('lnk_ma200d').href = links.BTC_MA200D;
+    if(links.BTC_SUPPLY_IN_PROFIT) document.getElementById('lnk_supply_profit').href = links.BTC_SUPPLY_IN_PROFIT;
+    if(links.BTC_60D_RETURN) document.getElementById('lnk_60d_return').href = links.BTC_60D_RETURN;
+    if(links.BTC_SOPR) document.getElementById('lnk_sopr').href = links.BTC_SOPR;
+    if(links.BTC_PUELL) document.getElementById('lnk_puell').href = links.BTC_PUELL;
+    if(links.BTC_HALVING) document.getElementById('lnk_halving').href = links.BTC_HALVING;
+    if(links.BTC_FEAR_GREED) document.getElementById('lnk_fear_greed').href = links.BTC_FEAR_GREED;
+    if(links.MSTR_TREASURY) document.getElementById('lnk_mstr_treasury').href = links.MSTR_TREASURY;
+    if(links.ASST_TREASURY) document.getElementById('lnk_asst_treasury').href = links.ASST_TREASURY;
+
+    const mstr = data.mstr || {};
+    const ath = data.ath || {};
+    renderTreasuryGroup('mstr', mstr.quote, mstr.treasury, ath['MSTR']);
+
+    // v15新增字段
+    const since = mstr.since_adoption || {};
+    const sinceReturnEl = document.getElementById('mstr_since_return');
+    sinceReturnEl.textContent = since.mstr_return_pct!=null ? fmtPct(since.mstr_return_pct) : '--';
+    sinceReturnEl.className = 'val ' + pctClass(since.mstr_return_pct);
+    const sinceBtcEl = document.getElementById('mstr_since_btc_return');
+    sinceBtcEl.textContent = since.btc_return_pct!=null ? fmtPct(since.btc_return_pct) : '--';
+    sinceBtcEl.className = 'val ' + pctClass(since.btc_return_pct);
+    document.getElementById('mstr_since_ratio').textContent = since.ratio!=null ? fmtNum(since.ratio,2)+'x' : '--';
+
+    const yahooExtra = mstr.yahoo_extra || {};
+    document.getElementById('mstr_beta').textContent = yahooExtra.beta!=null ? fmtNum(yahooExtra.beta,2) : '--';
+    document.getElementById('mstr_yahoo_mcap').textContent = yahooExtra.market_cap!=null ? '$'+fmtNum(yahooExtra.market_cap/1e9,2)+'B' : '--';
+
+    const flywheel = mstr.flywheel || {};
+    document.getElementById('mstr_strc_div_rate').textContent = flywheel.strc_dividend_rate_pct!=null ? fmtNum(flywheel.strc_dividend_rate_pct,2)+'%' : '--';
+    document.getElementById('mstr_strc_runway').textContent = flywheel.strc_runway_months!=null ? fmtNum(flywheel.strc_runway_months,1)+' 月' : '--';
+    document.getElementById('mstr_global_runway').textContent = flywheel.global_runway_months!=null ? fmtNum(flywheel.global_runway_months,1)+' 月' : '--';
+    document.getElementById('mstr_mnav_official').textContent = flywheel.mnav_official!=null ? fmtNum(flywheel.mnav_official,3)+'x' : '--';
+    if(links.MSTR_FLYWHEEL) document.getElementById('lnk_mstr_flywheel').href = links.MSTR_FLYWHEEL;
+
+    const asst = data.asst || {};
+    renderTreasuryGroup('asst', asst.quote, asst.treasury, ath['ASST']);
+
+    const prefContainer = document.getElementById('mstr_preferreds');
+    prefContainer.innerHTML = '';
+    const dcTemplate = links.DIGITAL_CREDIT_TEMPLATE || 'https://bitcointreasuries.net/digital-credit/{sym}';
+    ['STRC','STRD','STRF','STRK'].forEach(name=>{
+      const q = (data.mstr_preferreds || {})[name] || {};
+      renderTickerRow(prefContainer, name, q.symbol||name, q.price, q.change_pct, dcTemplate);
+    });
+
+    const wl = document.getElementById('watchlist');
+    wl.innerHTML = '';
+    // 自选股按"距历史高点跌幅"排序:跌得越多(负数越大)排越前面,方便你一眼看出
+    // 谁被砸得最狠。ath[sym]拿不到的(比如ATH功能被关掉,或者刚上市没多久历史数据不够)
+    // 会被排到最后面,而不是排在最前面误导成"跌幅最大"。
+    const wlRows = Object.entries(data.watchlist || {}).map(([name,q])=>{
+      const sym = q.symbol || name;
+      const a = ath[sym];
+      const dd = (q.price!=null && a && a.high) ? (q.price/a.high-1)*100 : null;
+      return {name, sym, price:q.price, chg:q.change_pct, dd, athInfo:a, priceSource:q.price_source};
+    });
+    wlRows.sort((a,b)=>{
+      if(a.dd===null && b.dd===null) return 0;
+      if(a.dd===null) return 1;
+      if(b.dd===null) return -1;
+      return a.dd - b.dd;
+    });
+    wlRows.forEach(r=>{
+      renderTickerRow(wl, r.name, r.sym, r.price, r.chg, links.STOCK_TEMPLATE || 'https://stockanalysis.com/stocks/{sym}/', r.athInfo, r.priceSource);
+    });
+
+    const ix = document.getElementById('indices');
+    ix.innerHTML = '';
+    const ixRows = Object.entries(data.indices || {}).map(([name,q])=>{
+      const sym = q.symbol || name;
+      const a = ath[sym];
+      const dd = (q.price!=null && a && a.high) ? (q.price/a.high-1)*100 : null;
+      return {name, sym, price:q.price, chg:q.change_pct, dd, athInfo:a, priceSource:q.price_source};
+    });
+    ixRows.sort((a,b)=>{
+      if(a.dd===null && b.dd===null) return 0;
+      if(a.dd===null) return 1;
+      if(b.dd===null) return -1;
+      return a.dd - b.dd;
+    });
+    ixRows.forEach(r=>{
+      renderTickerRow(ix, r.name, r.sym, r.price, r.chg, links.INDEX_TEMPLATE || 'https://www.google.com/finance/quote/{sym}', r.athInfo, r.priceSource);
+    });
+
+    const metalsEl = document.getElementById('metals');
+    metalsEl.innerHTML = '';
+    Object.entries(data.metals || {}).forEach(([name,q])=>{
+      const sym = q.symbol || name;
+      renderTickerRow(metalsEl, name, sym, q.price, q.change_pct, links.STOCK_TEMPLATE || 'https://stockanalysis.com/stocks/{sym}/', ath[sym]);
+    });
+    // 周大福金价单独一行,不是交易所行情,不套用ATH跌幅
+    const gr = data.gold_retail || {};
+    if (gr.price_rmb_per_gram != null) {
+      const div = document.createElement('div');
+      div.className = 'row';
+      div.innerHTML = `
+        <span class="label"><a class="sym" href="${links.GOLD_RETAIL||'#'}" target="_blank">周大福足金(零售)</a></span>
+        <span class="val">¥${fmtNum(gr.price_rmb_per_gram,2)}/克</span>
+        <span class="val dim" style="font-size:11px;">零售报价,非现货</span>
+      `;
+      metalsEl.appendChild(div);
+    }
+
+    const ceEl = document.getElementById('crypto_extra');
+    ceEl.innerHTML = '';
+    Object.entries(data.crypto_extra || {}).forEach(([name,row])=>{
+      renderCryptoRow(ceEl, name, row, links.CRYPTO_TEMPLATE || 'https://www.coingecko.com/en/coins/{id}', row.coingecko_id);
+    });
+
+    const riEl = document.getElementById('risk_indicators');
+    riEl.innerHTML = '';
+    const ri = data.risk_indicators || {};
+    const cmv = ri.cmv || {};
+
+    const cmvMeta = {
+      buffett_indicator: {name:'巴菲特指标', unit:'%', desc:'美国全市场总市值÷GDP,衡量股市相对经济体量是否过热'},
+      price_earnings: {name:'市盈率(P/E10, CAPE)', unit:'', desc:'标普500现价÷近10年平均每股盈利,和下面的席勒PE是同类指标,来源不同互相印证'},
+      price_to_sales: {name:'标普500市销率(P/S)', unit:'', desc:'标普500总市值÷企业前一年总销售额,不看利润只看营收规模'},
+      interest_rates: {name:'10年期美债利率', unit:'%', desc:'结合10年期美债利率和标普500偏离趋势线程度,综合判断股市是否过热'},
+      mean_reversion: {name:'均值回归偏离度', unit:'%', desc:'标普500实际点位偏离长期指数增长趋势线的百分比'},
+      earnings_yield_gap: {name:'股债收益差', unit:'%', desc:'标普500盈利收益率减10年期美债收益率,比较股票和债券的相对吸引力'},
+    };
+
+    Object.entries(cmvMeta).forEach(([key, meta])=>{
+      const d = cmv[key] || {};
+      renderRiskIndicatorRow(riEl, meta.name, d.value, meta.unit,
+                              links[`CMV_${key.toUpperCase()}`] || links.CMV_RATINGS_GUIDE || '#',
+                              meta.desc, d.zone, d.rating_cn, d.std_dev);
+    });
+
+    renderRiskIndicatorRow(riEl, '席勒市盈率(CAPE,in2013dollars.com)', ri.shiller_pe, '', links.SHILLER_PE || '#',
+                            '标普500现价/近10年通胀调整后平均EPS(单独一套3档:≤25低风险·25~35中风险·>35高风险,和上面不是同一体系)',
+                            ri.shiller_pe_zone, null, null);
+
+    document.getElementById('errbox').textContent = (data.errors && data.errors.length) ? ('后端最近的抓取错误:\n' + data.errors.join('\n')) : '';
+
+    // v12新增:如果后端此刻还完全没有数据(比如刚重启、第一轮抓取还没跑完),
+    // 不要傻等满60秒倒计时才看得到东西,改成3秒后很快再问一次,直到有数据为止
+    // (最多试MAX_FAST_RETRY次,避免万一后端一直起不来导致无限快速轮询)。
+    const hasData = data.btc && data.btc.price_usd != null;
+    if (!hasData && fastRetryCount < MAX_FAST_RETRY) {
+      fastRetryCount++;
+      countdown = FAST_RETRY_SEC;
+    } else {
+      fastRetryCount = 0;
+      countdown = REFRESH_SEC;
+    }
+  }catch(e){
+    document.getElementById('errbox').textContent = '前端无法连接后端 /api/data: ' + e;
+    countdown = REFRESH_SEC;
+    return;
+  }
+}
+
+function exportBrowserScreenshot(){
+  // v22新增:用html2canvas直接截取浏览器实际渲染出来的整个页面,而不是像
+  // /export.png那样在服务器上用wkhtmltoimage单独重新渲染一遍——这样看到的
+  // 截图和你自己在浏览器里看到的完全一致(字体、间距、当下这一刻的数据都是
+  // 浏览器真实渲染的结果),缺点是依赖你自己浏览器的性能,页面越长截图越慢,
+  // 超长页面在少数浏览器上可能会因为canvas尺寸上限而失败(这种情况下用旁边
+  // "服务器渲染长图"那个按钮做备用方案)。
+  if (typeof html2canvas === 'undefined') {
+    alert('html2canvas库加载失败(可能是网络问题或者CDN被墙),请刷新页面重试,或者改用旁边"服务器渲染长图"这个按钮。');
+    return;
+  }
+  const btn = document.getElementById('exportBrowserBtn');
+  const originalText = btn.textContent;
+  btn.textContent = '正在截图...';
+  btn.disabled = true;
+  const target = document.querySelector('.page');
+  html2canvas(target, {backgroundColor: '#0a0e12', useCORS: true, scale: window.devicePixelRatio || 1})
+    .then(function(canvas){
+      canvas.toBlob(function(blob){
+        if (!blob) {
+          alert('生成图片失败,可能是页面太长超过了浏览器canvas的尺寸上限,请改用"服务器渲染长图"这个按钮。');
+          btn.textContent = originalText;
+          btn.disabled = false;
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+        a.download = `dashboard_snapshot_${ts}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }, 'image/png');
+    })
+    .catch(function(err){
+      alert('截图失败: ' + err + '\n请改用旁边"服务器渲染长图"这个按钮。');
+      btn.textContent = originalText;
+      btn.disabled = false;
+    });
+}
+
+setInterval(()=>{
+  countdown--;
+  if(countdown <= 0){ refresh(); }
+  document.getElementById('countdown').textContent = Math.max(countdown,0);
+}, 1000);
+
+refresh();
+</script>
+</body>
+</html>
