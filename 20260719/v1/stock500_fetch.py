@@ -1,0 +1,482 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+股票500强基本面数据抓取脚本 (stock500_fetch.py) — v2
+================================================
+v2:新增股息(dividend_rate/dividend_yield_pct,来自雅虎财经.info)和IPO三项
+(ipo_date/ipo_price/ipo_cagr_pct)。IPO日期/价格是复用首次建档ATH时已经下载好的
+"全历史月线"第一条记录近似算出来的,只精确到月,不是真实挂牌当天数据;年化涨幅
+按实际经过年数做几何平均,不足半年的不计算。注意:v2之前就已经建过档的老ticker,
+ipo_date/ipo_price会是null,除非删除stock500_ath_cache.json强制重新全量建档
+(见get_or_update_ath函数里的详细说明,这是一次成本较高的操作,不建议轻易做)。
+
+之前叫"美股500强",改成"股票500强"更准确——名单里其实混了台积电(TSM)、ASML这类
+在美股交易所挂牌但注册地不在美国的公司,不是严格意义上的"美股"。
+
+这是一个完全独立于dashboard主程序(server.py)的脚本,不共用进程/内存,通过cron
+定时触发,跑完就退出,不常驻。这样即使这个脚本本身出问题(比如卡住、被限流),
+也不会影响到现有实时看板的正常运行。
+
+用法:
+    python3 stock500_fetch.py            # 跑全量500只
+    python3 stock500_fetch.py --limit 20 # 只跑前20只,用于第一次测试观察实际情况
+
+建议第一次先用 --limit 20 跑一遍,确认没有异常报错、观察实际耗时,再放进cron里
+跑全量。
+
+数据来源:
+  - 500只股票的名单+市值+现价:stockanalysis.com/list/biggest-companies/
+    (这个页面本身是服务器端渲染的,一次请求就能拿到全部500行,不需要翻页抓取)
+  - 市盈率/市净率/市销率/Beta/自由现金流/ROE/股份数/负债权益比:雅虎财经
+    (通过yfinance库的.info属性,这是比较"重"的接口)
+  - 历史最高价(ATH):雅虎财经的历史K线接口
+
+【这次设计的核心降险思路,回应"不能接受被限流/封IP风险"这个前提】
+1. ATH计算利用"历史最高价只会创新高、不会消失"这个特性:每个ticker只在
+   第一次(本地缓存里完全没有这个ticker的记录时)才去下载全部历史月K线做一次性
+   建档,这是最贵的操作。建档完成后,以后每天只需要用一个很轻的"最近5天K线"接口
+   去核对"最近有没有创新高",而不是每天都重新拉一遍全部历史——这一项把最耗资源
+   的部分从"500次重活"降到了"只在第一次真正发生",之后是几乎零成本的日常校验。
+2. 500个ticker之间插入5-10秒随机间隔,不是紧凑连续请求,整个跑一轮大概
+   1-1.5小时,访问节奏更接近正常人使用,而不是短时间内的批量轰炸。
+3. 熔断机制:连续失败达到一定次数(疑似被限流),自动暂停较长时间冷却后再继续,
+   而不是不断重试导致情况更糟。
+4. 每个ticker的抓取都包在try/except里,单个失败不会导致整个脚本中断,失败的
+   字段会是null,不会用假数据填充。
+
+依赖:
+    pip install --break-system-packages requests yfinance beautifulsoup4
+"""
+
+import argparse
+import json
+import os
+import random
+import re
+import sys
+import time
+import traceback
+from datetime import datetime
+
+import requests
+
+try:
+    import yfinance as yf
+except ImportError:
+    raise SystemExit("请先: pip install --break-system-packages yfinance requests beautifulsoup4")
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    raise SystemExit("请先: pip install --break-system-packages beautifulsoup4")
+
+
+# ------------------------------------------------------------------
+# 配置区
+# ------------------------------------------------------------------
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_JSON_PATH = os.path.join(SCRIPT_DIR, "cache_stock.json")
+ATH_CACHE_PATH = os.path.join(SCRIPT_DIR, "stock500_ath_cache.json")
+
+STOCKANALYSIS_LIST_URL = "https://stockanalysis.com/list/biggest-companies/"
+
+# 每个ticker之间的随机间隔(秒),这是最主要的降险手段之一,不要调得太小
+PER_TICKER_DELAY_RANGE = (5, 10)
+
+# 熔断:连续失败这么多次以后,判断可能被限流,暂停较长时间再继续
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
+CIRCUIT_BREAKER_COOLDOWN_SEC = 10 * 60  # 冷却10分钟
+
+REQUEST_TIMEOUT_SEC = 15
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+}
+
+
+def _log(msg):
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
+
+
+# ------------------------------------------------------------------
+# 第一步:抓500只股票的名单(名字/市值/现价/涨跌幅/营收)
+# ------------------------------------------------------------------
+
+def fetch_top500_list():
+    """从stockanalysis.com/list/biggest-companies/抓完整的500行列表。
+    这个页面实测是服务器端渲染的,一次请求就能拿到全部内容,不需要翻页。
+    表格列:Rank / Symbol / Company Name / Market Cap / Stock Price / % Change / Revenue"""
+    r = requests.get(STOCKANALYSIS_LIST_URL, headers=HEADERS, timeout=REQUEST_TIMEOUT_SEC)
+    r.raise_for_status()
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    rows_out = []
+    table = soup.find("table")
+    if table is None:
+        raise RuntimeError("没有在页面里找到<table>标签,页面结构可能变了,需要重新核对")
+
+    for tr in table.find_all("tr"):
+        cells = tr.find_all(["td"])
+        if len(cells) < 7:
+            continue  # 跳过表头行或者不完整的行
+        try:
+            rank = int(cells[0].get_text(strip=True))
+            symbol = cells[1].get_text(strip=True)
+            name = cells[2].get_text(strip=True)
+            market_cap_text = cells[3].get_text(strip=True)
+            price_text = cells[4].get_text(strip=True)
+            change_text = cells[5].get_text(strip=True)
+            revenue_text = cells[6].get_text(strip=True)
+        except Exception:
+            continue
+        rows_out.append({
+            "rank": rank,
+            "symbol": symbol,
+            "name": name,
+            "market_cap_text": market_cap_text,
+            "price_text": price_text,
+            "change_text": change_text,
+            "revenue_text": revenue_text,
+        })
+
+    if len(rows_out) < 100:
+        raise RuntimeError(f"只解析到{len(rows_out)}行,明显不对(应该有500行左右),"
+                            f"页面结构可能变了,需要重新核对,不继续往下跑")
+    return rows_out
+
+
+def _parse_money_text(s):
+    """把'4.912T' '271.23B' '86.99'这类字符串转成float(美元数值)"""
+    if not s or s == "-":
+        return None
+    m = re.match(r'^-?[\d,.]+', s)
+    if not m:
+        return None
+    try:
+        num = float(m.group(0).replace(",", ""))
+    except ValueError:
+        return None
+    unit = s[len(m.group(0)):].strip().upper()
+    mult = {"T": 1e12, "B": 1e9, "M": 1e6, "K": 1e3, "": 1}.get(unit, 1)
+    return num * mult
+
+
+def _parse_pct_text(s):
+    if not s or s == "-":
+        return None
+    try:
+        return float(s.replace("%", "").replace(",", ""))
+    except ValueError:
+        return None
+
+
+# ------------------------------------------------------------------
+# 第二步:ATH缓存的读写(核心降险机制)
+# ------------------------------------------------------------------
+
+def load_ath_cache():
+    if not os.path.exists(ATH_CACHE_PATH):
+        return {}
+    try:
+        with open(ATH_CACHE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        _log(f"读取ATH缓存失败,当成空缓存处理: {e}")
+        return {}
+
+
+def save_ath_cache(cache):
+    tmp_path = ATH_CACHE_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False)
+    os.replace(tmp_path, ATH_CACHE_PATH)
+
+
+def yahoo_symbol(symbol):
+    """stockanalysis.com用的股票代码格式和雅虎财经不完全一样——比如伯克希尔B类股
+    stockanalysis.com写作"BRK.B",但雅虎财经要用连字符"BRK-B"才能查到,不然会报
+    "possibly delisted; no timezone found"这种错误(你实测跑出来的BRK.B就是这个
+    原因,不是网络问题,是符号格式不对)。这个规律通常适用于所有"股票代码里带
+    点号表示股份类别"的情况(比如BF.B、PBR.A这些),统一把点号换成连字符再去查
+    雅虎财经,但展示给你看的时候还是用原始的symbol(带点号那个),不影响你识别。"""
+    return symbol.replace(".", "-")
+
+
+def get_or_update_ath(ticker, ath_cache, yf_ticker=None):
+    """核心降险逻辑:
+    - 如果这个ticker在缓存里已经有记录,只拉最近5天的K线(很轻),
+      看看最近有没有创新高,有就更新缓存,没有就直接用缓存里的旧值。
+    - 如果缓存里完全没有这个ticker,才去做一次性的全历史下载建档
+      (这是唯一"贵"的操作,而且每个ticker一辈子只做这一次)。
+    返回 {"high": float, "date": "YYYY-MM", "ipo_date":.., "ipo_price":..} 或者 None(彻底失败)。
+    注意:缓存的key用原始ticker(比如"BRK.B"),但真正去请求雅虎财经用yf_ticker
+    (比如"BRK-B")——这两者可能不一样,原因见yahoo_symbol()函数的说明。
+
+    v27新增ipo_date/ipo_price:复用首次建档时已经下载好的"全历史月线"数据,
+    第一条记录的日期/收盘价近似当作IPO日期/IPO价格——这是近似值,只精确到月
+    (月线粒度),不是真实的挂牌当天开盘价,而且雅虎财经的历史数据本身也不一定
+    从IPO当天开始(部分公司历史数据起点比实际IPO晚)。这两个字段只在"首次建档"
+    这一刻计算一次,之后走"只查最近5天"这条轻量路径时不会重新计算,所以在v27
+    之前就已经建过档的老ticker,这两个字段会一直是null,除非删除
+    stock500_ath_cache.json强制全部重新建档(会触发一次全量的"贵"操作,500个
+    ticker都要重新走一次全历史下载,不建议轻易做)。
+    """
+    yf_ticker = yf_ticker or ticker
+    cached = ath_cache.get(ticker)
+    try:
+        if cached is None:
+            # 首次建档:唯一的"重"操作,用月线控制数据量
+            hist = yf.Ticker(yf_ticker).history(period="max", interval="1mo")
+            if hist is None or hist.empty:
+                return None
+            idx = hist["High"].idxmax()
+            result = {"high": float(hist.loc[idx, "High"]), "date": idx.strftime("%Y-%m")}
+            first_idx = hist.index[0]
+            first_close = hist["Close"].iloc[0]
+            if first_close is not None and first_close == first_close:  # 排除NaN
+                result["ipo_date"] = first_idx.strftime("%Y-%m")
+                result["ipo_price"] = float(first_close)
+            ath_cache[ticker] = result
+            return result
+        else:
+            # 已经建过档:只用很轻的"最近5天"去校验有没有创新高
+            hist = yf.Ticker(yf_ticker).history(period="5d", interval="1d")
+            if hist is not None and not hist.empty:
+                recent_high = float(hist["High"].max())
+                if recent_high > cached["high"]:
+                    recent_idx = hist["High"].idxmax()
+                    result = {"high": recent_high, "date": recent_idx.strftime("%Y-%m")}
+                    # ipo_date/ipo_price不受"创新高"影响,原样保留旧缓存里的值(可能没有,见上面说明)
+                    if "ipo_date" in cached:
+                        result["ipo_date"] = cached["ipo_date"]
+                        result["ipo_price"] = cached["ipo_price"]
+                    ath_cache[ticker] = result
+                    return result
+            return cached
+    except Exception as e:
+        _log(f"  ATH处理失败({ticker}): {e}")
+        return cached  # 失败就沿用旧缓存(如果有的话),不是直接丢失历史记录
+
+
+# ------------------------------------------------------------------
+# 第三步:单只股票的基本面数据(雅虎财经.info)
+# ------------------------------------------------------------------
+
+CURRENCY_USD_QUOTED = {  # Yahoo这类pair是"1美元=多少外币",本币金额要"除以"汇率换算成美元
+    "KRW": "KRW=X", "JPY": "JPY=X", "TWD": "TWD=X", "CNY": "CNY=X",
+    "HKD": "HKD=X", "CHF": "CHF=X", "INR": "INR=X", "MXN": "MXN=X", "SEK": "SEK=X",
+}
+CURRENCY_FOREIGN_QUOTED = {  # 这类pair是"1单位外币=多少美元",本币金额要"乘以"汇率
+    "EUR": "EURUSD=X", "GBP": "GBPUSD=X", "AUD": "AUDUSD=X",
+}
+
+_fx_rate_cache = {"USD": 1.0}  # 整个脚本运行期间复用,同一种货币只查一次汇率,不是每只股票都查
+
+
+def get_usd_conversion_rate(currency_code):
+    """把currency_code这种货币的金额换算成美元要乘的系数。同一种货币在整个脚本
+    运行期间只会真正发一次网络请求查汇率,之后都从这个内存里的_fx_rate_cache复用,
+    不会因为500家公司里有50家都是韩元计价就查50次汇率——汇率不会因为查的是哪家
+    公司而变化,没必要重复查。"""
+    if not currency_code or currency_code == "USD":
+        return 1.0
+    if currency_code in _fx_rate_cache:
+        return _fx_rate_cache[currency_code]
+    rate = None
+    try:
+        if currency_code in CURRENCY_USD_QUOTED:
+            hist = yf.Ticker(CURRENCY_USD_QUOTED[currency_code]).history(period="5d")
+            if hist is not None and not hist.empty:
+                usd_per_unit = 1.0 / float(hist["Close"].iloc[-1])
+                rate = usd_per_unit
+        elif currency_code in CURRENCY_FOREIGN_QUOTED:
+            hist = yf.Ticker(CURRENCY_FOREIGN_QUOTED[currency_code]).history(period="5d")
+            if hist is not None and not hist.empty:
+                rate = float(hist["Close"].iloc[-1])
+        else:
+            _log(f"  没有配置{currency_code}这个货币的汇率换算pair,自由现金流这项会保留原币种数值不做转换,"
+                 f"需要你告诉我补上这个货币")
+    except Exception as e:
+        _log(f"  查{currency_code}汇率失败: {e}")
+    if rate is None:
+        rate = 1.0  # 查不到就不换算,保留原始数值,不是当成0处理(避免"看起来正常但其实是错的0")
+    _fx_rate_cache[currency_code] = rate
+    return rate
+
+
+def fetch_fundamentals(ticker):
+    """P/E、P/B、P/S、Beta、自由现金流、ROE、股份数、负债权益比。
+    这几个字段yfinance的.info字典里名字分别是:
+    trailingPE, priceToBook, priceToSalesTrailing12Months, beta, freeCashflow,
+    returnOnEquity, sharesOutstanding, debtToEquity。
+    某个字段没有就是None,不强行凑数。
+
+    v2修复:P/E、P/B、P/S、ROE、负债权益比这几个都是"比率",分子分母是同一种货币,
+    货币换算不影响比率大小,不存在问题。股份数是"数量"也不涉及货币。真正受"不同国家
+    货币面值差异悬殊"影响的,只有自由现金流(free_cash_flow)这一项原始金额——
+    比如韩元计价的公司,原始数字会是天文数字级别但换算成美元后其实很普通,如果不做
+    换算,直接按数字大小排序会让韩元/日元这类"面值小、数字大"的货币计价公司排名
+    虚高。这次加了货币换算,用info里的financialCurrency字段判断原始计价货币,
+    非美元的话按当前汇率换算成美元等值。"""
+    out = {
+        "pe_ratio": None, "pb_ratio": None, "ps_ratio": None, "beta": None,
+        "free_cash_flow": None, "roe": None, "shares_outstanding": None, "debt_to_equity": None,
+        "financial_currency": None, "fcf_fx_rate_applied": None,
+        "dividend_rate": None, "dividend_yield_pct": None,
+    }
+    try:
+        info = yf.Ticker(ticker).info
+        out["pe_ratio"] = info.get("trailingPE")
+        out["pb_ratio"] = info.get("priceToBook")
+        out["ps_ratio"] = info.get("priceToSalesTrailing12Months")
+        out["beta"] = info.get("beta")
+        out["roe"] = info.get("returnOnEquity")
+        out["shares_outstanding"] = info.get("sharesOutstanding")
+        out["debt_to_equity"] = info.get("debtToEquity")
+
+        out["dividend_rate"] = info.get("dividendRate")
+        div_yield = info.get("dividendYield")
+        if div_yield is not None:
+            # 和server.py里fetch_dividends同样的判断:极少数情况雅虎财经这个字段本身已经是
+            # 百分比数值(比如4.2表示4.2%)而不是小数(0.042),用一个粗略阈值(30%)兜底
+            out["dividend_yield_pct"] = div_yield if div_yield > 30 else div_yield * 100
+
+        fcf_raw = info.get("freeCashflow")
+        currency = info.get("financialCurrency")
+        out["financial_currency"] = currency
+        if fcf_raw is not None:
+            rate = get_usd_conversion_rate(currency)
+            out["free_cash_flow"] = fcf_raw * rate
+            out["fcf_fx_rate_applied"] = rate if currency and currency != "USD" else None
+    except Exception as e:
+        _log(f"  基本面抓取失败: {e}")
+    return out
+
+
+# ------------------------------------------------------------------
+# 主流程
+# ------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="美股Top 500基本面数据抓取")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="只处理前N只(用于第一次测试,建议先用--limit 20跑一遍)")
+    args = parser.parse_args()
+
+    _log("开始抓取500强股票名单...")
+    try:
+        rows = fetch_top500_list()
+    except Exception as e:
+        _log(f"抓取股票名单失败,整个脚本终止: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+    _log(f"拿到{len(rows)}行数据")
+
+    if args.limit:
+        rows = rows[:args.limit]
+        _log(f"--limit参数生效,只处理前{len(rows)}只(测试模式)")
+
+    ath_cache = load_ath_cache()
+    results = []
+    consecutive_failures = 0
+
+    for i, row in enumerate(rows):
+        ticker = row["symbol"]
+        yf_ticker = yahoo_symbol(ticker)  # 查雅虎财经用这个转换后的符号,展示/缓存key还是用原始ticker
+        _log(f"[{i+1}/{len(rows)}] 处理 {ticker} ({row['name']})...")
+
+        row_failed = False
+        try:
+            fundamentals = fetch_fundamentals(yf_ticker)
+            ath_info = get_or_update_ath(ticker, ath_cache, yf_ticker=yf_ticker)
+
+            market_cap = _parse_money_text(row["market_cap_text"])
+            price = _parse_money_text(row["price_text"])  # 现价本身没有单位后缀,这个函数同样适用
+            change_pct = _parse_pct_text(row["change_text"])
+            revenue = _parse_money_text(row["revenue_text"])
+
+            ath_dd_pct = None
+            if price is not None and ath_info and ath_info.get("high"):
+                ath_dd_pct = (price / ath_info["high"] - 1) * 100
+
+            # v27新增:IPO至今年化涨幅(CAGR),用ipo_price(近似值,见get_or_update_ath里的说明)
+            # 和现价算出总倍数,再按实际经过的年数开方年化。年数不足0.5年的不计算(避免刚上市
+            # 没几个月就用年化拉爆的极端数字,意义不大反而容易误导)。
+            ipo_date = ath_info.get("ipo_date") if ath_info else None
+            ipo_price = ath_info.get("ipo_price") if ath_info else None
+            ipo_cagr_pct = None
+            if ipo_date and ipo_price and price is not None and ipo_price > 0:
+                try:
+                    ipo_dt = datetime.strptime(ipo_date, "%Y-%m")
+                    years = (datetime.now() - ipo_dt).days / 365.25
+                    if years >= 0.5:
+                        ipo_cagr_pct = ((price / ipo_price) ** (1 / years) - 1) * 100
+                except Exception:
+                    pass
+
+            results.append({
+                "rank": row["rank"],
+                "symbol": ticker,
+                "name": row["name"],
+                "market_cap": market_cap,
+                "price": price,
+                "change_pct": change_pct,
+                "revenue": revenue,
+                "ath": ath_info.get("high") if ath_info else None,
+                "ath_date": ath_info.get("date") if ath_info else None,
+                "ath_drawdown_pct": ath_dd_pct,
+                "ipo_date": ipo_date,
+                "ipo_price": ipo_price,
+                "ipo_cagr_pct": ipo_cagr_pct,
+                **fundamentals,
+            })
+
+            if fundamentals.get("pe_ratio") is None and ath_info is None:
+                row_failed = True  # 两个关键部分都没拿到,算作这一轮失败,用于熔断判断
+        except Exception as e:
+            _log(f"  处理{ticker}整体失败: {e}")
+            row_failed = True
+            results.append({
+                "rank": row["rank"], "symbol": ticker, "name": row["name"],
+                "market_cap": None, "price": None, "change_pct": None, "revenue": None,
+                "ath": None, "ath_date": None, "ath_drawdown_pct": None,
+                "ipo_date": None, "ipo_price": None, "ipo_cagr_pct": None,
+                "pe_ratio": None, "pb_ratio": None, "ps_ratio": None, "beta": None,
+                "free_cash_flow": None, "roe": None, "shares_outstanding": None, "debt_to_equity": None,
+                "dividend_rate": None, "dividend_yield_pct": None,
+            })
+
+        if row_failed:
+            consecutive_failures += 1
+        else:
+            consecutive_failures = 0
+
+        if consecutive_failures >= CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+            _log(f"连续{consecutive_failures}次失败,疑似被限流,暂停{CIRCUIT_BREAKER_COOLDOWN_SEC}秒冷却...")
+            time.sleep(CIRCUIT_BREAKER_COOLDOWN_SEC)
+            consecutive_failures = 0
+
+        # 定期把已经算好的ATH缓存落盘,不用等全部跑完才存,防止脚本中途被打断丢失进度
+        if (i + 1) % 20 == 0:
+            save_ath_cache(ath_cache)
+
+        if i < len(rows) - 1:
+            time.sleep(random.uniform(*PER_TICKER_DELAY_RANGE))
+
+    save_ath_cache(ath_cache)
+
+    output = {
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "count": len(results),
+        "stocks": results,
+    }
+    tmp_path = OUTPUT_JSON_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, ensure_ascii=False)
+    os.replace(tmp_path, OUTPUT_JSON_PATH)
+    _log(f"全部完成,写入 {OUTPUT_JSON_PATH},共{len(results)}条")
+
+
+if __name__ == "__main__":
+    main()
