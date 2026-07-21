@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>股票500强</title>
+<style>
+  :root{
+    --bg:#0a0e12; --panel:#12171d; --line:#1f2830; --text:#dfe6ec; --dim:#7b8794;
+    --amber:#d4a537; --up:#3fb950; --down:#f85149;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  .page{max-width:1600px; margin:0 auto;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); padding:20px 16px 60px;}
+  h1{font-family:var(--mono); font-size:16px; font-weight:600; letter-spacing:.08em;
+     text-transform:uppercase; color:var(--amber); margin:0 0 4px;}
+  .meta{font-family:var(--mono); font-size:11px; color:var(--dim); margin-bottom:16px;}
+  .filter-bar{margin-bottom:12px; display:flex; gap:8px; align-items:center;}
+  .filter-bar input{
+    background:var(--panel); border:1px solid var(--line); color:var(--text);
+    font-family:var(--mono); font-size:13px; padding:6px 10px; border-radius:4px; width:240px;
+  }
+  .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:6px;}
+  table{border-collapse:collapse; width:100%; font-family:var(--mono); font-size:12px; white-space:nowrap;}
+  th, td{padding:7px 10px; text-align:right; border-bottom:1px solid var(--line);}
+  th:first-child, td:first-child{text-align:left; position:sticky; left:0; background:var(--panel); z-index:1;}
+  thead th{
+    background:#161c24; color:var(--dim); cursor:pointer; user-select:none;
+    position:sticky; top:0; z-index:2; font-weight:600; white-space:nowrap;
+  }
+  thead th:first-child{z-index:3;}
+  thead th:hover{color:var(--amber);}
+  thead th.sorted-asc::after{content:' ▲'; color:var(--amber);}
+  thead th.sorted-desc::after{content:' ▼'; color:var(--amber);}
+  tbody tr:hover{background:#161c24;}
+  .up{color:var(--up);} .down{color:var(--down);} .dim{color:var(--dim);}
+  a.sym-link{color:var(--text); text-decoration:none; font-weight:600;}
+  a.sym-link:hover{color:var(--amber);}
+  .name-sub{color:var(--dim); font-size:10px; display:block;}
+  .errbox{margin-top:16px; font-family:var(--mono); font-size:11px; color:var(--down); white-space:pre-wrap;}
+  .back-link{font-family:var(--mono); font-size:11px; color:var(--dim); text-decoration:none;}
+  .back-link:hover{color:var(--amber);}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+<div class="page">
+
+<a class="back-link" href="/">← 返回主看板</a>
+<h1 style="margin-top:10px;">股票500强</h1>
+<div class="meta">数据来自stockanalysis.com(名单/市值/现价) + 雅虎财经(估值/基本面/ATH) · 独立脚本每日更新一次,不是实时数据 · 生成时间: <b id="generatedAt">--</b> · 点击表头排序</div>
+
+<div class="filter-bar">
+  <input type="text" id="filterInput" placeholder="按代码或公司名筛选...">
+  <span class="meta" id="rowCount"></span>
+  <button onclick="exportBrowserScreenshot()" style="font-family:var(--mono); font-size:12px; background:var(--panel); color:var(--amber); border:1px solid var(--amber); border-radius:4px; padding:6px 12px; cursor:pointer;">截图导出 ⬇</button>
+  <button onclick="downloadJSON()" style="font-family:var(--mono); font-size:12px; background:var(--panel); color:var(--dim); border:1px solid var(--line); border-radius:4px; padding:6px 12px; cursor:pointer;">下载JSON</button>
+  <button onclick="downloadCSV()" style="font-family:var(--mono); font-size:12px; background:var(--panel); color:var(--dim); border:1px solid var(--line); border-radius:4px; padding:6px 12px; cursor:pointer;">下载CSV</button>
+</div>
+
+<div class="table-wrap">
+  <table id="stockTable">
+    <thead>
+      <tr>
+        <th data-key="name" data-type="string" style="text-align:left;">股票名</th>
+        <th data-key="market_cap" data-type="number">市值</th>
+        <th data-key="price" data-type="number">现价</th>
+        <th data-key="ath" data-type="number">ATH</th>
+        <th data-key="ath_date" data-type="string">ATH时间</th>
+        <th data-key="ath_drawdown_pct" data-type="number">距ATH深度</th>
+        <th data-key="pe_ratio" data-type="number">市盈率</th>
+        <th data-key="pb_ratio" data-type="number">市净率</th>
+        <th data-key="ps_ratio" data-type="number">市销率</th>
+        <th data-key="beta" data-type="number">BETA系数</th>
+        <th data-key="free_cash_flow" data-type="number">自由现金流</th>
+        <th data-key="roe" data-type="number">ROE</th>
+        <th data-key="shares_outstanding" data-type="number">股份数</th>
+        <th data-key="debt_to_equity" data-type="number">负债/权益</th>
+        <th data-key="change_pct" data-type="number">24h涨跌</th>
+        <th data-key="revenue" data-type="number">营收</th>
+        <th data-key="dividend_yield_pct" data-type="number">Dividend</th>
+        <th data-key="ipo_date" data-type="string">IPO日期</th>
+        <th data-key="ipo_price" data-type="number">IPO价格</th>
+        <th data-key="ipo_cagr_pct" data-type="number">IPO至今年化涨幅</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<div class="errbox" id="errbox"></div>
+
+</div><!-- /.page -->
+
+<script>
+let allStocks = [];
+let currentSort = {key: 'market_cap', dir: 'desc'};
+
+function fmtMoney(v){
+  if(v===null||v===undefined) return '--';
+  const abs = Math.abs(v);
+  if(abs >= 1e12) return '$'+(v/1e12).toFixed(2)+'T';
+  if(abs >= 1e9) return '$'+(v/1e9).toFixed(2)+'B';
+  if(abs >= 1e6) return '$'+(v/1e6).toFixed(2)+'M';
+  return '$'+v.toFixed(2);
+}
+function fmtShares(v){
+  if(v===null||v===undefined) return '--';
+  const abs = Math.abs(v);
+  if(abs >= 1e9) return (v/1e9).toFixed(2)+'B';
+  if(abs >= 1e6) return (v/1e6).toFixed(2)+'M';
+  return v.toLocaleString();
+}
+function fmtNum(v, digits=2){
+  if(v===null||v===undefined) return '--';
+  return v.toFixed(digits);
+}
+function fmtPct(v){
+  if(v===null||v===undefined) return '--';
+  return (v>=0?'+':'')+v.toFixed(2)+'%';
+}
+function pctClass(v){
+  if(v===null||v===undefined) return '';
+  return v>=0 ? 'up' : 'down';
+}
+
+function renderTable(){
+  const filterText = document.getElementById('filterInput').value.trim().toLowerCase();
+  let rows = allStocks;
+  if(filterText){
+    rows = rows.filter(s => (s.symbol||'').toLowerCase().includes(filterText) || (s.name||'').toLowerCase().includes(filterText));
+  }
+
+  const {key, dir} = currentSort;
+  const th = document.querySelector(`th[data-key="${key}"]`);
+  const type = th ? th.dataset.type : 'number';
+  rows = rows.slice().sort((a,b)=>{
+    let va = a[key], vb = b[key];
+    if(va===null||va===undefined) va = type==='number' ? -Infinity : '';
+    if(vb===null||vb===undefined) vb = type==='number' ? -Infinity : '';
+    if(type==='string'){
+      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+      return dir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    }
+    return dir==='asc' ? va - vb : vb - va;
+  });
+
+  document.getElementById('rowCount').textContent = `共${rows.length}行`;
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = rows.map(s => `
+    <tr>
+      <td><a class="sym-link" href="https://stockanalysis.com/stocks/${(s.symbol||'').toLowerCase()}/" target="_blank">${s.symbol||'--'}</a><span class="name-sub">${s.name||''}</span></td>
+      <td>${fmtMoney(s.market_cap)}</td>
+      <td>${s.price!=null ? '$'+fmtNum(s.price) : '--'}</td>
+      <td>${s.ath!=null ? '$'+fmtNum(s.ath) : '--'}</td>
+      <td class="dim">${s.ath_date||'--'}</td>
+      <td class="${pctClass(s.ath_drawdown_pct)}">${fmtPct(s.ath_drawdown_pct)}</td>
+      <td>${fmtNum(s.pe_ratio)}</td>
+      <td>${fmtNum(s.pb_ratio)}</td>
+      <td>${fmtNum(s.ps_ratio)}</td>
+      <td>${fmtNum(s.beta)}</td>
+      <td title="${s.financial_currency && s.financial_currency!=='USD' ? '原始计价货币:'+s.financial_currency+',已按查询时汇率换算成美元' : ''}">${fmtMoney(s.free_cash_flow)}${s.financial_currency && s.financial_currency!=='USD' ? ' <span class="dim" style="font-size:9px;">('+s.financial_currency+'→USD)</span>' : ''}</td>
+      <td>${s.roe!=null ? (s.roe*100).toFixed(2)+'%' : '--'}</td>
+      <td>${fmtShares(s.shares_outstanding)}</td>
+      <td>${fmtNum(s.debt_to_equity)}</td>
+      <td class="${pctClass(s.change_pct)}">${fmtPct(s.change_pct)}</td>
+      <td>${fmtMoney(s.revenue)}</td>
+      <td title="雅虎财经dividendYield">${s.dividend_yield_pct!=null ? fmtNum(s.dividend_yield_pct,2)+'%' : '--'}</td>
+      <td class="dim" title="基于yfinance全历史月线第一条记录近似,只能精确到月,不是准确的挂牌日">${s.ipo_date||'--'}</td>
+      <td>${s.ipo_price!=null ? '$'+fmtNum(s.ipo_price) : '--'}</td>
+      <td class="${pctClass(s.ipo_cagr_pct)}">${fmtPct(s.ipo_cagr_pct)}</td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('thead th').forEach(th=>{
+    th.classList.remove('sorted-asc','sorted-desc');
+    if(th.dataset.key === currentSort.key){
+      th.classList.add(currentSort.dir==='asc' ? 'sorted-asc' : 'sorted-desc');
+    }
+  });
+}
+
+document.querySelectorAll('thead th').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const key = th.dataset.key;
+    if(currentSort.key === key){
+      currentSort.dir = currentSort.dir==='asc' ? 'desc' : 'asc';
+    } else {
+      currentSort = {key, dir: 'desc'};
+    }
+    renderTable();
+  });
+});
+
+document.getElementById('filterInput').addEventListener('input', renderTable);
+
+async function load(){
+  try{
+    const res = await fetch('/cache_stock.json', {cache:'no-store'});
+    if(!res.ok){
+      const err = await res.json().catch(()=>({}));
+      document.getElementById('errbox').textContent = err.error || `加载失败: HTTP ${res.status}`;
+      return;
+    }
+    const data = await res.json();
+    allStocks = data.stocks || [];
+    document.getElementById('generatedAt').textContent = data.generated_at || '--';
+    renderTable();
+  }catch(e){
+    document.getElementById('errbox').textContent = '无法加载 /cache_stock.json: ' + e;
+  }
+}
+
+function exportBrowserScreenshot(){
+  // 和主看板index.html里的同一个思路:直接截取浏览器实际渲染出来的页面,
+  // 不是服务器端重新渲染,所以看到的和你自己浏览器里看到的一致。
+  if (typeof html2canvas === 'undefined') {
+    alert('html2canvas库加载失败(可能是网络问题或者CDN被墙),请刷新页面重试。');
+    return;
+  }
+  const target = document.querySelector('.page');
+  html2canvas(target, {backgroundColor: '#0a0e12', useCORS: true, scale: window.devicePixelRatio || 1})
+    .then(function(canvas){
+      canvas.toBlob(function(blob){
+        if (!blob) { alert('生成图片失败,可能是表格太长超过了浏览器canvas的尺寸上限。'); return; }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `stock500_snapshot_${new Date().toISOString().slice(0,10)}.png`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    })
+    .catch(function(err){ alert('截图失败: ' + err); });
+}
+
+function _triggerDownload(content, filename, mime){
+  const blob = new Blob([content], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadJSON(){
+  if(!allStocks.length){ alert('数据还没加载完成'); return; }
+  _triggerDownload(JSON.stringify({generated_at: document.getElementById('generatedAt').textContent, stocks: allStocks}, null, 2),
+                    `stock500_${new Date().toISOString().slice(0,10)}.json`, 'application/json');
+}
+
+function downloadCSV(){
+  if(!allStocks.length){ alert('数据还没加载完成'); return; }
+  const cols = ['rank','symbol','name','market_cap','price','ath','ath_date','ath_drawdown_pct',
+                'pe_ratio','pb_ratio','ps_ratio','beta','free_cash_flow','financial_currency','roe','shares_outstanding',
+                'debt_to_equity','change_pct','revenue','dividend_rate','dividend_yield_pct',
+                'ipo_date','ipo_price','ipo_cagr_pct'];
+  const header = cols.join(',');
+  const lines = allStocks.map(s => cols.map(c=>{
+    let v = s[c];
+    if(v===null||v===undefined) return '';
+    if(typeof v === 'string' && v.includes(',')) return `"${v.replace(/"/g,'""')}"`;
+    return v;
+  }).join(','));
+  _triggerDownload([header, ...lines].join('\n'), `stock500_${new Date().toISOString().slice(0,10)}.csv`, 'text/csv');
+}
+
+load();
+</script>
+</body>
+</html>

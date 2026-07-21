@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中国QDII基金监控</title>
+<style>
+  :root{
+    --bg:#0a0e12; --panel:#12171d; --line:#1f2830; --text:#dfe6ec; --dim:#7b8794;
+    --amber:#d4a537; --up:#3fb950; --down:#f85149;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  .page{max-width:1500px; margin:0 auto;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); padding:20px 16px 60px;}
+  h1{font-family:var(--mono); font-size:16px; font-weight:600; letter-spacing:.08em;
+     text-transform:uppercase; color:var(--amber); margin:0 0 4px;}
+  .meta{font-family:var(--mono); font-size:11px; color:var(--dim); margin-bottom:16px; line-height:1.6;}
+  .back-link{font-family:var(--mono); font-size:11px; color:var(--dim); text-decoration:none;}
+  .back-link:hover{color:var(--amber);}
+  .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:6px;}
+  table{border-collapse:collapse; width:100%; font-family:var(--mono); font-size:12px; white-space:nowrap;}
+  th, td{padding:7px 10px; text-align:right; border-bottom:1px solid var(--line);}
+  th:first-child, td:first-child{text-align:left; white-space:normal; max-width:280px;}
+  thead th{background:#161c24; color:var(--dim); font-weight:600; position:sticky; top:0;}
+  tbody tr:hover{background:#161c24;}
+  .up{color:var(--up);} .down{color:var(--down);} .dim{color:var(--dim);}
+  a.sym-link{color:var(--text); text-decoration:none; font-weight:600;}
+  a.sym-link:hover{color:var(--amber);}
+  .code-sub{color:var(--dim); font-size:10px; display:block;}
+  .note-cell{text-align:left; white-space:normal; max-width:260px; font-size:11px;}
+  .errbox{margin-top:16px; font-family:var(--mono); font-size:11px; color:var(--down); white-space:pre-wrap;}
+</style>
+</head>
+<body>
+<div class="page">
+
+<a class="back-link" href="/">← 返回主看板</a>
+<h1 style="margin-top:10px;">中国QDII基金监控</h1>
+<div class="meta">
+  数据来自天天基金网(eastmoney)pingzhongdata接口 · 独立脚本qdii_fetch.py定时更新,不是实时数据 ·
+  生成时间: <b id="generatedAt">--</b><br>
+  年化波动率/最大回撤/近3月及近1年涨跌幅是基于历史净值自己算的统计量。
+  "最小申购金额"来自基金公司公开设定的fund_minsg字段(人民币元/次),不代表当前实时限购额度——
+  QDII基金的实时限购经常变动,准确的当前可申购金额请点基金名称链接去官方页面/APP确认。
+</div>
+
+<div class="table-wrap">
+  <table id="qdiiTable">
+    <thead>
+      <tr>
+        <th style="text-align:left;">基金名称</th>
+        <th>最新净值</th>
+        <th>净值日期</th>
+        <th>年化波动率</th>
+        <th>历史最大回撤</th>
+        <th>近3月涨跌幅</th>
+        <th>近1年涨跌幅</th>
+        <th>最小申购金额(元)</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<div class="errbox" id="errbox"></div>
+
+</div>
+
+<script>
+function fmtNum(v, digits=2){
+  if(v===null||v===undefined||isNaN(v)) return '--';
+  return Number(v).toFixed(digits);
+}
+function fmtPct(v){
+  if(v===null||v===undefined||isNaN(v)) return '--';
+  return (v>=0?'+':'')+v.toFixed(2)+'%';
+}
+function pctClass(v){
+  if(v===null||v===undefined||isNaN(v)) return '';
+  return v>=0 ? 'up' : 'down';
+}
+
+async function load(){
+  try{
+    const res = await fetch('/cache_qdii.json', {cache:'no-store'});
+    if(!res.ok){
+      const err = await res.json().catch(()=>({}));
+      document.getElementById('errbox').textContent = err.error || `加载失败: HTTP ${res.status}`;
+      return;
+    }
+    const data = await res.json();
+    document.getElementById('generatedAt').textContent = data.generated_at || '--';
+    const funds = data.funds || [];
+
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = funds.map(f => `
+      <tr>
+        <td><a class="sym-link" href="${f.eastmoney_url||'#'}" target="_blank">${f.name||'--'}</a><span class="code-sub">${f.code||''}</span></td>
+        <td>${f.latest_nav!=null ? fmtNum(f.latest_nav,4) : '--'}</td>
+        <td class="dim">${f.latest_date||'--'}</td>
+        <td>${f.annualized_volatility_pct!=null ? fmtNum(f.annualized_volatility_pct,2)+'%' : '--'}</td>
+        <td class="down">${f.max_drawdown_pct!=null ? fmtNum(f.max_drawdown_pct,2)+'%' : '--'}</td>
+        <td class="${pctClass(f.return_3m_pct)}">${fmtPct(f.return_3m_pct)}</td>
+        <td class="${pctClass(f.return_1y_pct)}">${fmtPct(f.return_1y_pct)}</td>
+        <td>${f.min_purchase_amount_rmb!=null ? fmtNum(f.min_purchase_amount_rmb,0)+'元' : '--'}</td>
+      </tr>
+    `).join('');
+  }catch(e){
+    document.getElementById('errbox').textContent = '无法加载 /cache_qdii.json: ' + e;
+  }
+}
+
+load();
+</script>
+</body>
+</html>
