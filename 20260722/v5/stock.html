@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>股票1500强</title>
+<style>
+  :root{
+    --bg:#0a0e12; --panel:#12171d; --line:#1f2830; --text:#dfe6ec; --dim:#7b8794;
+    --amber:#d4a537; --up:#3fb950; --down:#f85149;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  .page{max-width:1600px; margin:0 auto;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); padding:20px 16px 60px;}
+  h1{font-family:var(--mono); font-size:16px; font-weight:600; letter-spacing:.08em;
+     text-transform:uppercase; color:var(--amber); margin:0 0 4px;}
+  .meta{font-family:var(--mono); font-size:11px; color:var(--dim); margin-bottom:16px;}
+  .filter-bar{margin-bottom:12px; display:flex; gap:8px; align-items:center;}
+  .filter-bar{flex-wrap:wrap;}
+  .filter-bar input, .multi-select-btn{
+    background:var(--panel); border:1px solid var(--line); color:var(--text);
+    font-family:var(--mono); font-size:13px; padding:6px 10px; border-radius:4px; width:240px;
+  }
+  .multi-select{position:relative; min-width:180px;}
+  .multi-select-btn{width:100%; min-width:180px; text-align:left; cursor:pointer; display:flex; justify-content:space-between; gap:10px;}
+  .multi-select-btn::after{content:'▾'; color:var(--dim);}
+  .multi-select.open .multi-select-btn{border-color:var(--amber);}
+  .multi-select-menu{display:none; position:absolute; left:0; top:calc(100% + 5px); z-index:20; min-width:260px;
+    max-width:380px; max-height:320px; overflow:auto; padding:6px; background:#20252c;
+    border:1px solid #46505b; border-radius:6px; box-shadow:0 10px 28px rgba(0,0,0,.45);}
+  .multi-select.open .multi-select-menu{display:block;}
+  .multi-actions{display:flex; gap:6px; padding:3px 4px 7px; border-bottom:1px solid var(--line); margin-bottom:4px; position:sticky; top:0; background:#20252c;}
+  .multi-actions button{background:transparent; color:var(--amber); border:1px solid var(--line); border-radius:3px; cursor:pointer; padding:3px 8px;}
+  .multi-option{display:flex; align-items:center; gap:8px; padding:6px 7px; cursor:pointer; border-radius:3px; white-space:nowrap;}
+  .multi-option:hover{background:#2b323a;}
+  .multi-option input{width:auto; margin:0; accent-color:var(--amber);}
+  .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:6px;}
+  table{border-collapse:collapse; width:100%; font-family:var(--mono); font-size:12px; white-space:nowrap;}
+  th, td{padding:7px 10px; text-align:right; border-bottom:1px solid var(--line);}
+  th:first-child, td:first-child{
+    text-align:left; position:sticky; left:0; background:var(--panel); z-index:1;
+    width:300px; min-width:240px; max-width:320px; white-space:normal;
+  }
+  thead th{
+    background:#161c24; color:var(--dim); cursor:pointer; user-select:none;
+    position:sticky; top:0; z-index:2; font-weight:600; white-space:nowrap;
+  }
+  thead th:first-child{z-index:3;}
+  thead th:hover{color:var(--amber);}
+  thead th.sorted-asc::after{content:' ▲'; color:var(--amber);}
+  thead th.sorted-desc::after{content:' ▼'; color:var(--amber);}
+  tbody tr:hover{background:#161c24;}
+  .up{color:var(--up);} .down{color:var(--down);} .dim{color:var(--dim);}
+  a.sym-link{color:var(--text); text-decoration:none; font-weight:600;}
+  a.sym-link:hover{color:var(--amber);}
+  .name-sub{
+    color:var(--dim); font-size:10px; display:block; margin-top:2px;
+    max-width:300px; white-space:normal; overflow-wrap:anywhere; word-break:normal; line-height:1.35;
+  }
+  .errbox{margin-top:16px; font-family:var(--mono); font-size:11px; color:var(--down); white-space:pre-wrap;}
+  .back-link{font-family:var(--mono); font-size:11px; color:var(--dim); text-decoration:none;}
+  .back-link:hover{color:var(--amber);}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+<div class="page">
+
+<a class="back-link" href="/">← 返回主看板</a>
+<h1 style="margin-top:10px;">股票1500强</h1>
+<div class="meta">数据来自Nasdaq(1500强名单/市值/现价) + 雅虎财经(估值/基本面/ATH) · 独立脚本每日更新一次,不是实时数据 · 生成时间: <b id="generatedAt">--</b> · 点击表头排序</div>
+
+<div class="filter-bar">
+  <input type="text" id="filterInput" placeholder="按代码或中英文公司名筛选...">
+  <div class="multi-select" id="sectorFilter"><button type="button" class="multi-select-btn">全部板块</button><div class="multi-select-menu"></div></div>
+  <div class="multi-select" id="industryFilter"><button type="button" class="multi-select-btn">全部细分行业</button><div class="multi-select-menu"></div></div>
+  <span class="meta" id="rowCount"></span>
+  <button onclick="exportBrowserScreenshot()" style="font-family:var(--mono); font-size:12px; background:var(--panel); color:var(--amber); border:1px solid var(--amber); border-radius:4px; padding:6px 12px; cursor:pointer;">截图导出 ⬇</button>
+  <button onclick="downloadJSON()" style="font-family:var(--mono); font-size:12px; background:var(--panel); color:var(--dim); border:1px solid var(--line); border-radius:4px; padding:6px 12px; cursor:pointer;">下载JSON</button>
+  <button onclick="downloadCSV()" style="font-family:var(--mono); font-size:12px; background:var(--panel); color:var(--dim); border:1px solid var(--line); border-radius:4px; padding:6px 12px; cursor:pointer;">下载CSV</button>
+</div>
+
+<div class="table-wrap">
+  <table id="stockTable">
+    <thead>
+      <tr>
+        <th data-key="name" data-type="string" style="text-align:left;">股票名</th>
+        <th data-key="sector_cn" data-type="string">板块</th>
+        <th data-key="industry_cn" data-type="string">细分行业</th>
+        <th data-key="market_cap" data-type="number">市值</th>
+        <th data-key="price" data-type="number">现价</th>
+        <th data-key="ath" data-type="number">ATH</th>
+        <th data-key="ath_date" data-type="string">ATH时间</th>
+        <th data-key="ath_drawdown_pct" data-type="number">距ATH深度</th>
+        <th data-key="pe_ratio" data-type="number">市盈率</th>
+        <th data-key="pb_ratio" data-type="number">市净率</th>
+        <th data-key="ps_ratio" data-type="number">市销率</th>
+        <th data-key="beta" data-type="number">BETA系数</th>
+        <th data-key="free_cash_flow" data-type="number">自由现金流</th>
+        <th data-key="roe" data-type="number">ROE</th>
+        <th data-key="shares_outstanding" data-type="number">股份数</th>
+        <th data-key="debt_to_equity" data-type="number">负债/权益</th>
+        <th data-key="change_pct" data-type="number">24h涨跌</th>
+        <th data-key="revenue" data-type="number">营收</th>
+        <th data-key="dividend_yield_pct" data-type="number">Dividend</th>
+        <th data-key="ipo_date" data-type="string">IPO日期</th>
+        <th data-key="ipo_price" data-type="number">IPO价格</th>
+        <th data-key="ipo_cagr_pct" data-type="number">IPO至今年化涨幅</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<div class="errbox" id="errbox"></div>
+
+</div><!-- /.page -->
+
+<script>
+let allStocks = [];
+let visibleStocks = [];
+let currentSort = {key: 'market_cap', dir: 'desc'};
+const selectedSectors = new Set();
+const selectedIndustries = new Set();
+// 根据本次500股JSON中实际出现的102个Yahoo行业补齐中文；未知新行业仍保留英文。
+const INDUSTRY_TRANSLATIONS = {
+  'Advertising Agencies':'广告代理', 'Aerospace & Defense':'航空航天与国防',
+  'Agricultural Inputs':'农业投入品', 'Airlines':'航空公司', 'Apparel Retail':'服装零售',
+  'Asset Management':'资产管理', 'Auto & Truck Dealerships':'汽车与卡车经销',
+  'Auto Manufacturers':'汽车制造', 'Auto Parts':'汽车零部件', 'Banks - Diversified':'综合银行',
+  'Banks - Regional':'区域银行', 'Beverages - Brewers':'啤酒酿造',
+  'Beverages - Non-Alcoholic':'非酒精饮料', 'Beverages - Wineries & Distilleries':'葡萄酒与烈酒',
+  'Biotechnology':'生物技术', 'Building Materials':'建筑材料',
+  'Building Products & Equipment':'建筑产品与设备', 'Capital Markets':'资本市场',
+  'Communication Equipment':'通信设备', 'Computer Hardware':'计算机硬件',
+  'Confectioners':'糖果食品', 'Conglomerates':'综合企业', 'Consumer Electronics':'消费电子',
+  'Copper':'铜矿', 'Credit Services':'信贷服务', 'Diagnostics & Research':'诊断与研究',
+  'Discount Stores':'折扣零售', 'Drug Manufacturers - General':'综合制药',
+  'Drug Manufacturers - Specialty & Generic':'专科药与仿制药', 'Electrical Equipment & Parts':'电气设备与零部件',
+  'Electronic Components':'电子元件', 'Electronic Gaming & Multimedia':'电子游戏与多媒体',
+  'Engineering & Construction':'工程与建筑', 'Entertainment':'娱乐',
+  'Farm & Heavy Construction Machinery':'农业与重型工程机械', 'Farm Products':'农产品',
+  'Financial Conglomerates':'金融综合企业', 'Financial Data & Stock Exchanges':'金融数据与证券交易所',
+  'Food Distribution':'食品分销', 'Footwear & Accessories':'鞋类与配饰', 'Gold':'黄金矿业',
+  'Grocery Stores':'食品杂货店', 'Health Information Services':'医疗信息服务',
+  'Healthcare Plans':'医疗保险计划', 'Home Improvement Retail':'家居装修零售',
+  'Household & Personal Products':'家庭与个人用品', 'Industrial Distribution':'工业品分销',
+  'Information Technology Services':'IT服务', 'Insurance - Diversified':'综合保险',
+  'Insurance - Life':'人寿保险', 'Insurance - Property & Casualty':'财产与意外保险',
+  'Insurance Brokers':'保险经纪', 'Integrated Freight & Logistics':'综合货运与物流',
+  'Internet Content & Information':'互联网内容与信息', 'Internet Retail':'互联网零售',
+  'Lodging':'住宿酒店', 'Luxury Goods':'奢侈品', 'Medical Care Facilities':'医疗服务机构',
+  'Medical Devices':'医疗器械', 'Medical Distribution':'医疗产品分销',
+  'Medical Instruments & Supplies':'医疗仪器与耗材', 'Metal Fabrication':'金属加工',
+  'Mortgage Finance':'抵押贷款金融', 'Oil & Gas E&P':'油气勘探与生产',
+  'Oil & Gas Equipment & Services':'油气设备与服务', 'Oil & Gas Integrated':'综合油气',
+  'Oil & Gas Midstream':'油气中游', 'Oil & Gas Refining & Marketing':'油气炼化与销售',
+  'Other Industrial Metals & Mining':'其他工业金属与采矿', 'Packaged Foods':'包装食品',
+  'REIT - Diversified':'综合型REIT', 'REIT - Healthcare Facilities':'医疗设施REIT',
+  'REIT - Industrial':'工业地产REIT', 'REIT - Retail':'零售地产REIT',
+  'REIT - Specialty':'专业型REIT', 'Railroads':'铁路运输', 'Real Estate Services':'房地产服务',
+  'Rental & Leasing Services':'租赁服务', 'Residential Construction':'住宅建筑',
+  'Resorts & Casinos':'度假村与赌场', 'Restaurants':'餐饮',
+  'Scientific & Technical Instruments':'科学与技术仪器',
+  'Semiconductor Equipment & Materials':'半导体设备与材料', 'Semiconductors':'半导体',
+  'Software - Application':'应用软件', 'Software - Infrastructure':'基础软件',
+  'Specialty Business Services':'专业商业服务', 'Specialty Chemicals':'特种化学品',
+  'Specialty Industrial Machinery':'专用工业机械', 'Specialty Retail':'专业零售',
+  'Steel':'钢铁', 'Telecom Services':'电信服务', 'Tobacco':'烟草', 'Travel Services':'旅游服务',
+  'Trucking':'公路货运', 'Uranium':'铀矿', 'Utilities - Diversified':'综合公用事业',
+  'Utilities - Independent Power Producers':'独立电力生产商',
+  'Utilities - Regulated Electric':'受监管电力', 'Utilities - Regulated Gas':'受监管燃气',
+  'Utilities - Renewable':'可再生能源公用事业', 'Waste Management':'废弃物管理'
+  ,'Airports & Air Services':'机场与航空服务', 'Aluminum':'铝业',
+  'Apparel Manufacturing':'服装制造', 'Broadcasting':'广播电视', 'Chemicals':'化学品',
+  'Consulting Services':'咨询服务', 'Department Stores':'百货商店',
+  'Education & Training Services':'教育与培训服务', 'Electronics & Computer Distribution':'电子与计算机分销',
+  'Furnishings, Fixtures & Appliances':'家具、装饰与家电', 'Gambling':'博彩',
+  'Insurance - Reinsurance':'再保险', 'Insurance - Specialty':'专业保险', 'Leisure':'休闲娱乐',
+  'Lumber & Wood Production':'木材生产', 'Marine Shipping':'海运', 'Oil & Gas Drilling':'油气钻探',
+  'Other Precious Metals & Mining':'其他贵金属与采矿', 'Packaging & Containers':'包装与容器',
+  'Paper & Paper Products':'造纸与纸制品', 'Personal Services':'个人服务',
+  'Pollution & Treatment Controls':'污染治理设备', 'Publishing':'出版',
+  'REIT - Hotel & Motel':'酒店与汽车旅馆REIT', 'REIT - Mortgage':'抵押贷款REIT',
+  'REIT - Office':'办公地产REIT', 'REIT - Residential':'住宅地产REIT',
+  'Recreational Vehicles':'休闲车辆', 'Security & Protection Services':'安防服务',
+  'Silver':'白银矿业', 'Solar':'太阳能', 'Tools & Accessories':'工具与配件',
+  'Utilities - Regulated Water':'受监管供水'
+};
+function isNonCommonSecurity(s){
+  return /preferred stock|mandatory convertible|\bwarrants?\b|\bright(s)?\b/i.test(s.name||'');
+}
+function normalizeIndustryNames(rows){
+  rows = rows.filter(s=>!isNonCommonSecurity(s));
+  rows.forEach(s=>{
+    if(s.industry && INDUSTRY_TRANSLATIONS[s.industry]) s.industry_cn = INDUSTRY_TRANSLATIONS[s.industry];
+  });
+  return rows;
+}
+
+function safeNumber(v){
+  if(v===null || v===undefined || v==='' || typeof v==='boolean') return null;
+  const n = typeof v==='number' ? v : Number(String(v).replace(/[$,%]/g,'').trim());
+  return Number.isFinite(n) ? n : null;
+}
+function fmtMoney(v){
+  const n = safeNumber(v);
+  if(n===null) return '--';
+  const abs = Math.abs(n);
+  if(abs >= 1e12) return '$'+(n/1e12).toFixed(2)+'T';
+  if(abs >= 1e9) return '$'+(n/1e9).toFixed(2)+'B';
+  if(abs >= 1e6) return '$'+(n/1e6).toFixed(2)+'M';
+  return '$'+n.toFixed(2);
+}
+function fmtShares(v){
+  const n = safeNumber(v);
+  if(n===null) return '--';
+  const abs = Math.abs(n);
+  if(abs >= 1e9) return (n/1e9).toFixed(2)+'B';
+  if(abs >= 1e6) return (n/1e6).toFixed(2)+'M';
+  return n.toLocaleString();
+}
+function fmtNum(v, digits=2){
+  const n = safeNumber(v);
+  return n===null ? '--' : n.toFixed(digits);
+}
+function fmtPct(v){
+  const n = safeNumber(v);
+  return n===null ? '--' : (n>=0?'+':'')+n.toFixed(2)+'%';
+}
+function pctClass(v){
+  const n = safeNumber(v);
+  return n===null ? '' : (n>=0 ? 'up' : 'down');
+}
+function fmtDollar(v){
+  const n = safeNumber(v);
+  return n===null ? '--' : '$'+n.toFixed(2);
+}
+function fmtPlainPct(v, scale=1){
+  const n = safeNumber(v);
+  return n===null ? '--' : (n*scale).toFixed(2)+'%';
+}
+
+function renderTable(){
+  const filterText = document.getElementById('filterInput').value.trim().toLowerCase();
+  let rows = allStocks;
+  if(filterText){
+    rows = rows.filter(s => [s.symbol,s.name,s.chinese_name,s.sector_cn,s.industry_cn]
+      .some(v => (v||'').toLowerCase().includes(filterText)));
+  }
+  if(selectedSectors.size) rows = rows.filter(s => selectedSectors.has(s.sector_cn||s.sector||''));
+  if(selectedIndustries.size) rows = rows.filter(s => selectedIndustries.has(s.industry_cn||s.industry||''));
+
+  const {key, dir} = currentSort;
+  const th = document.querySelector(`th[data-key="${key}"]`);
+  const type = th ? th.dataset.type : 'number';
+  rows = rows.slice().sort((a,b)=>{
+    let va = a[key], vb = b[key];
+    if(type==='number'){
+      va = safeNumber(va); vb = safeNumber(vb);
+      if(va===null) va = -Infinity;
+      if(vb===null) vb = -Infinity;
+    } else {
+      if(va===null||va===undefined) va = '';
+      if(vb===null||vb===undefined) vb = '';
+    }
+    if(type==='string'){
+      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+      return dir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    }
+    return dir==='asc' ? va - vb : vb - va;
+  });
+  visibleStocks = rows;
+
+  document.getElementById('rowCount').textContent = `共${rows.length}行`;
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = rows.map(s => `
+    <tr>
+      <td><a class="sym-link" href="https://stockanalysis.com/stocks/${(s.symbol||'').toLowerCase()}/" target="_blank">${s.symbol||'--'}</a><span class="name-sub">${s.chinese_name ? s.chinese_name+' · ' : ''}${s.name||''}</span></td>
+      <td>${s.sector_cn||s.sector||'--'}</td>
+      <td>${s.industry_cn||s.industry||'--'}</td>
+      <td>${fmtMoney(s.market_cap)}</td>
+      <td>${fmtDollar(s.price)}</td>
+      <td>${fmtDollar(s.ath)}</td>
+      <td class="dim">${s.ath_date||'--'}</td>
+      <td class="${pctClass(s.ath_drawdown_pct)}">${fmtPct(s.ath_drawdown_pct)}</td>
+      <td>${fmtNum(s.pe_ratio)}</td>
+      <td>${fmtNum(s.pb_ratio)}</td>
+      <td>${fmtNum(s.ps_ratio)}</td>
+      <td>${fmtNum(s.beta)}</td>
+      <td title="${s.financial_currency && s.financial_currency!=='USD' ? '原始计价货币:'+s.financial_currency+',已按查询时汇率换算成美元' : ''}">${fmtMoney(s.free_cash_flow)}${s.financial_currency && s.financial_currency!=='USD' ? ' <span class="dim" style="font-size:9px;">('+s.financial_currency+'→USD)</span>' : ''}</td>
+      <td>${fmtPlainPct(s.roe,100)}</td>
+      <td>${fmtShares(s.shares_outstanding)}</td>
+      <td>${fmtNum(s.debt_to_equity)}</td>
+      <td class="${pctClass(s.change_pct)}">${fmtPct(s.change_pct)}</td>
+      <td>${fmtMoney(s.revenue)}</td>
+      <td title="雅虎财经dividendYield">${fmtPlainPct(s.dividend_yield_pct)}</td>
+      <td class="dim" title="基于yfinance全历史月线第一条记录近似,只能精确到月,不是准确的挂牌日">${s.ipo_date||'--'}</td>
+      <td>${fmtDollar(s.ipo_price)}</td>
+      <td class="${pctClass(s.ipo_cagr_pct)}">${fmtPct(s.ipo_cagr_pct)}</td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('thead th').forEach(th=>{
+    th.classList.remove('sorted-asc','sorted-desc');
+    if(th.dataset.key === currentSort.key){
+      th.classList.add(currentSort.dir==='asc' ? 'sorted-asc' : 'sorted-desc');
+    }
+  });
+}
+
+document.querySelectorAll('thead th').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const key = th.dataset.key;
+    if(currentSort.key === key){
+      currentSort.dir = currentSort.dir==='asc' ? 'desc' : 'asc';
+    } else {
+      currentSort = {key, dir: 'desc'};
+    }
+    renderTable();
+  });
+});
+
+let filterTimer = null;
+document.getElementById('filterInput').addEventListener('input', ()=>{
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(renderTable, 150);
+});
+
+function buildMultiSelect(id, values, selected, emptyLabel, onChange){
+  const root = document.getElementById(id);
+  const button = root.querySelector('.multi-select-btn');
+  const menu = root.querySelector('.multi-select-menu');
+  menu.innerHTML = '';
+  const actions = document.createElement('div');
+  actions.className = 'multi-actions';
+  const selectAll = document.createElement('button');
+  selectAll.type = 'button'; selectAll.textContent = '全选';
+  const clear = document.createElement('button');
+  clear.type = 'button'; clear.textContent = '清空';
+  actions.append(selectAll, clear); menu.appendChild(actions);
+  const sorted = values.filter(Boolean).sort((a,b)=>a.localeCompare(b,'zh-CN'));
+  const refreshLabel = ()=>{ button.textContent = selected.size ? `已选${selected.size}项` : emptyLabel; };
+  sorted.forEach(value=>{
+    const label = document.createElement('label'); label.className = 'multi-option';
+    const input = document.createElement('input'); input.type = 'checkbox'; input.checked = selected.has(value);
+    const text = document.createElement('span'); text.textContent = value;
+    input.addEventListener('change', ()=>{
+      input.checked ? selected.add(value) : selected.delete(value);
+      refreshLabel(); onChange();
+    });
+    label.append(input,text); menu.appendChild(label);
+  });
+  selectAll.onclick = ()=>{ sorted.forEach(v=>selected.add(v)); buildMultiSelect(id,sorted,selected,emptyLabel,onChange); onChange(); };
+  clear.onclick = ()=>{ selected.clear(); buildMultiSelect(id,sorted,selected,emptyLabel,onChange); onChange(); };
+  refreshLabel();
+}
+function updateIndustryOptions(){
+  const source = selectedSectors.size
+    ? allStocks.filter(s=>selectedSectors.has(s.sector_cn||s.sector||'')) : allStocks;
+  const values = [...new Set(source.map(s=>s.industry_cn||s.industry).filter(Boolean))];
+  const valid = new Set(values);
+  [...selectedIndustries].forEach(v=>{ if(!valid.has(v)) selectedIndustries.delete(v); });
+  buildMultiSelect('industryFilter', values, selectedIndustries, '全部细分行业', renderTable);
+}
+function setupClassificationFilters(){
+  const sectors = [...new Set(allStocks.map(s=>s.sector_cn||s.sector).filter(Boolean))];
+  buildMultiSelect('sectorFilter', sectors, selectedSectors, '全部板块', ()=>{
+    updateIndustryOptions(); renderTable();
+  });
+  updateIndustryOptions();
+}
+
+document.addEventListener('click', e=>{
+  document.querySelectorAll('.multi-select').forEach(root=>{
+    if(!root.contains(e.target)) root.classList.remove('open');
+  });
+});
+document.querySelectorAll('.multi-select-btn').forEach(button=>{
+  button.addEventListener('click', e=>{
+    e.stopPropagation();
+    const root = button.closest('.multi-select');
+    document.querySelectorAll('.multi-select').forEach(other=>{ if(other!==root) other.classList.remove('open'); });
+    root.classList.toggle('open');
+  });
+});
+
+async function load(){
+  try{
+    const res = await fetch('/cache_stock.json', {cache:'no-store'});
+    if(!res.ok){
+      const err = await res.json().catch(()=>({}));
+      document.getElementById('errbox').textContent = err.error || `加载失败: HTTP ${res.status}`;
+      return;
+    }
+    const data = await res.json();
+    allStocks = normalizeIndustryNames(data.stocks || []);
+    setupClassificationFilters();
+    document.getElementById('generatedAt').textContent = data.generated_at || '--';
+    renderTable();
+  }catch(e){
+    document.getElementById('errbox').textContent = '无法加载 /cache_stock.json: ' + e;
+  }
+}
+
+function exportBrowserScreenshot(){
+  // 和主看板index.html里的同一个思路:直接截取浏览器实际渲染出来的页面,
+  // 不是服务器端重新渲染,所以看到的和你自己浏览器里看到的一致。
+  if (typeof html2canvas === 'undefined') {
+    alert('html2canvas库加载失败(可能是网络问题或者CDN被墙),请刷新页面重试。');
+    return;
+  }
+  const target = document.querySelector('.page');
+  html2canvas(target, {backgroundColor: '#0a0e12', useCORS: true, scale: window.devicePixelRatio || 1})
+    .then(function(canvas){
+      canvas.toBlob(function(blob){
+        if (!blob) { alert('生成图片失败,可能是表格太长超过了浏览器canvas的尺寸上限。'); return; }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `stock1500_snapshot_${new Date().toISOString().slice(0,10)}.png`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    })
+    .catch(function(err){ alert('截图失败: ' + err); });
+}
+
+function _triggerDownload(content, filename, mime){
+  const blob = new Blob([content], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadJSON(){
+  if(!visibleStocks.length){ alert('当前筛选结果为空,没有可下载的数据'); return; }
+  _triggerDownload(JSON.stringify({generated_at: document.getElementById('generatedAt').textContent, count:visibleStocks.length, stocks: visibleStocks}, null, 2),
+                    `stock1500_${new Date().toISOString().slice(0,10)}.json`, 'application/json');
+}
+
+function downloadCSV(){
+  if(!visibleStocks.length){ alert('当前筛选结果为空,没有可下载的数据'); return; }
+  const cols = ['rank','symbol','chinese_name','name','sector','sector_cn','industry','industry_cn','market_cap','price','ath','ath_date','ath_drawdown_pct',
+                'pe_ratio','pb_ratio','ps_ratio','beta','free_cash_flow','financial_currency','roe','shares_outstanding',
+                'debt_to_equity','change_pct','revenue','dividend_rate','dividend_yield_pct',
+                'ipo_date','ipo_price','ipo_cagr_pct'];
+  const header = cols.join(',');
+  const lines = visibleStocks.map(s => cols.map(c=>{
+    let v = s[c];
+    if(v===null||v===undefined) return '';
+    if(typeof v === 'string' && v.includes(',')) return `"${v.replace(/"/g,'""')}"`;
+    return v;
+  }).join(','));
+  _triggerDownload([header, ...lines].join('\n'), `stock1500_${new Date().toISOString().slice(0,10)}.csv`, 'text/csv');
+}
+
+load();
+</script>
+</body>
+</html>
